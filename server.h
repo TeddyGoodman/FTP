@@ -6,10 +6,12 @@
 #include <stdio.h>
 
 //全局变量
-int lis_port = 21;
+short unsigned lis_port = 21;
 int listenfd;
 char file_root[128] = {0};
 
-int ftp_init();
+int server_init();
+
+void serve_client(int client_fd);
 
 #endif

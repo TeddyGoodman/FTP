@@ -1,4 +1,5 @@
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <errno.h>
@@ -8,8 +9,9 @@
 #include <getopt.h>
 #include "server.h"
 #include <ctype.h>
+#include <stdlib.h>
 
-int ftp_init() {
+int server_init() {
     struct sockaddr_in addr;
 
     //创建socket
@@ -40,63 +42,13 @@ int ftp_init() {
     return 0;
 }
 
-int main(int argc, char const *argv[])
-{
-    //解析命令行参数
-    int opt;
-    char check_s;
-    const struct option argu_options[] = {
-
-        {"port", required_argument, NULL, 'p'},
-
-        {"root", required_argument, NULL, 'r'},
-
-        {NULL, 0 ,NULL, 0},
-    };
-
-    while((opt = getopt_long_only(argc, (char *const *)argv,    
-            "p:r:", argu_options, NULL)) != -1)
-    {
-        switch (opt) {
-            case 'r':
-                if (access(optarg, 0)) {
-                    printf("wrong path given: %s.", optarg);
-                    return 1;
-                }
-                strcpy(file_root, optarg);
-                break;
-            case 'p':
-                if (sscanf(optarg, "%d%c", &lis_port, &check_s) != 1) {
-                    printf("wrong port given: %s.\n", optarg);
-                    return 1;
-                }
-                break;
-            case '?':
-                printf("wrong argument.\n");
-                return 1;
-        }
-    }
-
-    if (!(*file_root))
-        sprintf(file_root, "/tmp");
-    printf("The root directory set to: %s.\n", file_root);
-    printf("The listening port set to: %d.\n", lis_port);
-
-    // Ftp init
-    if (ftp_init()) return 1;
-
-    int connfd;
+void serve_client(int client_fd) {
+    int connfd = client_fd;
     char sentence[8192];
     int p;
     int len;
     //持续监听连接请求
     while (1) {
-        //等待client的连接 -- 阻塞函数
-        if ((connfd = accept(listenfd, NULL, NULL)) == -1) {
-            printf("Error accept(): %s(%d)\n", strerror(errno), errno);
-            continue;
-        }
-        
         //榨干socket传来的内容
         p = 0;
         while (1) {
@@ -129,13 +81,77 @@ int main(int argc, char const *argv[])
             int n = write(connfd, sentence + p, len + 1 - p);
             if (n < 0) {
                 printf("Error write(): %s(%d)\n", strerror(errno), errno);
-                return 1;
+                return;
             } else {
                 p += n;
             }           
         }
 
-        close(connfd);
+        printf("write done\n");
+    }
+    close(connfd);
+}
+
+int main(int argc, char const *argv[])
+{
+    //解析命令行参数
+    int opt;
+    char check_s;
+    struct sockaddr_in client_fd;
+    int connfd;
+    unsigned int size_sock = sizeof(struct sockaddr);
+
+    const struct option argu_options[] = {
+
+        {"port", required_argument, NULL, 'p'},
+
+        {"root", required_argument, NULL, 'r'},
+
+        {NULL, 0 ,NULL, 0},
+    };
+
+    //逐一读取参数
+    while((opt = getopt_long_only(argc, (char *const *)argv,    
+            "p:r:", argu_options, NULL)) != -1)
+    {
+        switch (opt) {
+            case 'r':
+                if (access(optarg, 0)) {
+                    printf("wrong path given: %s.", optarg);
+                    return 1;
+                }
+                strcpy(file_root, optarg);
+                break;
+            case 'p':
+                if (sscanf(optarg, "%hd%c", &lis_port, &check_s) != 1) {
+                    printf("wrong port given: %s.\n", optarg);
+                    return 1;
+                }
+                break;
+            case '?':
+                printf("wrong argument.\n");
+                return 1;
+        }
+    }
+
+    if (!(*file_root))
+        sprintf(file_root, "/tmp");
+    printf("The root directory set to: %s.\n", file_root);
+    printf("The listening port set to: %d.\n", lis_port);
+
+    // Ftp init
+    if (server_init()) return 1;
+
+
+    //waiting for connection
+    while (1) {
+        //等待client的连接 -- 阻塞函数
+        if ((connfd = accept(listenfd, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
+            printf("Error accept(): %s(%d)\n", strerror(errno), errno);
+            continue;
+        }
+        printf("Receive connection from:%s:%hu\n", inet_ntoa(client_fd.sin_addr), ntohs(client_fd.sin_port));
+        serve_client(connfd);
     }
 
     close(listenfd);
