@@ -1,4 +1,5 @@
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 
 #include <unistd.h>
@@ -7,13 +8,13 @@
 #include <string.h>
 #include <memory.h>
 #include <stdio.h>
+#include <string.h>
 
 int main(int argc, char **argv) {
 	int sockfd;
 	struct sockaddr_in addr;
 	char sentence[8192];
 	int len;
-	int p;
 
 	//创建socket
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
@@ -36,46 +37,33 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
+	int m = recv(sockfd, sentence, 8192, 0);
+	if (!m) return 1;
+	sentence[m] = '\0';
+	printf("%s", sentence);
+
+	int code;
 	while (1) {
+		printf("my_ftpclient > ");
 		//获取键盘输入
 		fgets(sentence, 4096, stdin);
 		len = strlen(sentence);
+		sentence[len - 1] = '\r';
 		sentence[len] = '\n';
 		sentence[len + 1] = '\0';
+		len++;
+
+		send(sockfd, sentence, len, MSG_WAITALL);
+		// printf("msg sent to the server.\n");
 		
-		//把键盘输入写入socket
-		p = 0;
-		while (p < len) {
-			int n = write(sockfd, sentence + p, len + 1 - p);		//write函数不保证所有的数据写完，可能中途退出
-			if (n < 0) {
-				printf("Error write(): %s(%d)\n", strerror(errno), errno);
-				return 1;
-	 		} else {
-				p += n;
-			}			
-		}
-
-		//榨干socket接收到的内容
-		p = 0;
-		while (1) {
-			int n = read(sockfd, sentence + p, 8191 - p);
-			if (n < 0) {
-				printf("Error read(): %s(%d)\n", strerror(errno), errno);	//read不保证一次读完，可能中途退出
-				return 1;
-			} else if (n == 0) {
-				break;
-			} else {
-				p += n;
-				if (sentence[p - 1] == '\n') {
-					break;
-				}
-			}
-		}
-
-		//注意：read并不会将字符串加上'\0'，需要手动添加
-		sentence[p - 1] = '\0';
+		int m = recv(sockfd, sentence, 8192, 0);
+		// printf("read from server: %d\n", m);
+		sentence[m] = '\0';
 
 		printf("FROM SERVER: %s", sentence);
+
+		if (sscanf(sentence, "%d", &code) != 0)
+			if (code == 221) break;
 	}
 
 	close(sockfd);

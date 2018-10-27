@@ -7,9 +7,11 @@
 #include <memory.h>
 #include <stdio.h>
 #include <getopt.h>
-#include "server.h"
 #include <ctype.h>
 #include <stdlib.h>
+#include "server.h"
+#include "utility.h"
+#include "command.h"
 
 int server_init() {
     struct sockaddr_in addr;
@@ -43,53 +45,59 @@ int server_init() {
 }
 
 void serve_client(int client_fd) {
-    int connfd = client_fd;
-    char sentence[8192];
-    int p;
+
+    send_const_msg(client_fd, "220 FTP server ready.\r\n");
+
+    char* sentence = (char*)malloc(8192);
+    int count = 0;
     int len;
-    //持续监听连接请求
+    char* command = (char*)malloc(1024);
+    char* parameter = (char*)malloc(1024);
+    char check_s;
+    LoginStatus login = unlogged;
+    int code;
+
+    //客户端发送的消息
     while (1) {
-        //榨干socket传来的内容
-        p = 0;
-        while (1) {
-            int n = read(connfd, sentence + p, 8191 - p);
-            if (n < 0) {
-                printf("Error read(): %s(%d)\n", strerror(errno), errno);
-                close(connfd);
-                continue;
-            } else if (n == 0) {
-                break;
-            } else {
-                p += n;
-                if (sentence[p - 1] == '\n') {
-                    break;
-                }
-            }
-        }
-        //socket接收到的字符串并不会添加'\0'
-        sentence[p - 1] = '\0';
-        len = p - 1;
-        
-        //字符串处理
-        for (p = 0; p < len; p++) {
-            sentence[p] = toupper(sentence[p]);
-        }
+        len = recv(client_fd, sentence, 8192, 0);
+        //长度小于2代表断开连接
+        if (len < 2) break;
+        sentence[len] = '\0';
+        remove_enter(sentence);
+        count = sscanf(sentence, "%s %s %c", command, parameter, &check_s);
 
-        //发送字符串到socket
-        p = 0;
-        while (p < len) {
-            int n = write(connfd, sentence + p, len + 1 - p);
-            if (n < 0) {
-                printf("Error write(): %s(%d)\n", strerror(errno), errno);
-                return;
-            } else {
-                p += n;
-            }           
+        if (count < 0) {
+            printf("None string read.\n");
+            send_const_msg(client_fd, "500 No Verb found.\r\n");
+            continue;
         }
-
-        printf("write done\n");
+        else if (count == 1) {
+            printf("read 1, command: %s\n", command);
+            //处理无参数指令
+            code = dispatch_cmd(command, NULL, &login);
+            reply_msg(client_fd, code, sentence);
+        }
+        else if (count == 2){
+            printf("read 2, command: %s, para: %s\n", command, parameter);
+            //处理有参数指令
+            code = dispatch_cmd(command, parameter, &login);
+            reply_msg(client_fd, code, sentence);
+        }
+        else {
+            printf("read more than 2.\n");
+            send_const_msg(client_fd, "501 too many parameters.\r\n");
+            continue;
+        }
+        if (code == 221) break;
+        // send(client_fd, sentence, len, MSG_WAITALL);
     }
-    close(connfd);
+
+    printf("connection closed.\n");
+    free(sentence);
+    free(command);
+    free(parameter);
+    close(client_fd);
+    return;
 }
 
 int main(int argc, char const *argv[])
@@ -157,4 +165,86 @@ int main(int argc, char const *argv[])
     close(listenfd);
 
     return 0;
+}
+
+int dispatch_cmd(char* cmd, char* para, LoginStatus* login) {
+    // 530 for permission is denied.
+    int code;
+    if (strcmp(cmd, "USER") == 0) {
+        code = cmd_user(para, login);
+    }
+    else if (strcmp(cmd, "PASS") == 0) {
+        code = cmd_pass(para, login);
+    }
+    else if (strcmp(cmd, "QUIT") == 0) {
+        code = cmd_quit(para, login);
+    }
+    else {
+        code = 502;
+    }
+    // if (*login == unlogged) {
+    //     //未登录，只期望USER，其他的均为530
+    //     code = 502;
+    //     if (strcmp(cmd, "USER") == 0)
+    //         
+    // }
+    // else if (*login == need_pass){
+    //     //已经使用USER返回了331，期望使用PASS,pass只有在user之后会发起
+    //     code = 530;
+    //     if (strcmp(cmd, "PASS") == 0)
+    //         code = cmd_pass(para, login);
+    // }
+    // else if (*login == logged) {
+    //     //已经登录,默认502
+    //     code = 502;
+    //     if (strcmp(cmd, "PASS") == 0)
+    //         code = cmd_pass(para, login);
+    //     // else if (strcmp(cmd, ))
+    // }
+    // else {
+    //     code = 500;
+    // }
+    return code;
+}
+
+void reply_msg(int client_fd, int code, char* sentence) {
+    switch (code) {
+        case 500:
+            sprintf(sentence, "%d %s\r\n", code, "syntax error, please check your input.");
+            break;
+        case 502:
+            sprintf(sentence, "%d %s\r\n", code, "unsupported verb.");
+            break;
+        case 503:
+            sprintf(sentence, "%d %s\r\n", code, "wrong usage of PASS, should be after USER.");
+            break;
+        case 504:
+            sprintf(sentence, "%d %s\r\n", code, "parameter error, please check your parameter.");
+            break;
+        case 501:
+            sprintf(sentence, "%d %s\r\n", code, "wrong format of the parameter.");
+            break;
+        case 530:
+            sprintf(sentence, "%d %s\r\n", code, "permission denied.");
+            break;
+        case 331:
+        case 332:
+            sprintf(sentence, "%d %s\r\n", code, "need password, please use PASS.");
+            break;
+        case 230:
+            sprintf(sentence, "%d %s\r\n", code, "permission granted. welcome!");
+            break;
+        case 202:
+            sprintf(sentence, "%d %s\r\n", code, "permission already granted. no need for this.");
+            break;
+        case 221:
+            sprintf(sentence, "%d %s\r\n", code, "Bye.");
+            break;
+        default:
+            sprintf(sentence, "%d %s\r\n", code, "this code didn't has a custom message.");
+            break;
+    }
+    int len = strlen(sentence);
+    send(client_fd, sentence, len, MSG_WAITALL);
+    return;
 }
