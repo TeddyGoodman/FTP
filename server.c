@@ -44,62 +44,6 @@ int server_init() {
     return 0;
 }
 
-void serve_client(int client_fd) {
-
-    send_const_msg(client_fd, "220 FTP server ready.\r\n");
-
-    char* sentence = (char*)malloc(8192);
-    int count = 0;
-    int len;
-    char* command = (char*)malloc(1024);
-    char* parameter = (char*)malloc(1024);
-    char check_s;
-    LoginStatus login = unlogged;
-    int code;
-
-    //客户端发送的消息
-    while (1) {
-        len = recv(client_fd, sentence, 8192, 0);
-        //长度小于2代表断开连接
-        if (len < 2) break;
-        sentence[len] = '\0';
-        remove_enter(sentence);
-        count = sscanf(sentence, "%s %s %c", command, parameter, &check_s);
-
-        if (count < 0) {
-            printf("None string read.\n");
-            send_const_msg(client_fd, "500 No Verb found.\r\n");
-            continue;
-        }
-        else if (count == 1) {
-            printf("read 1, command: %s\n", command);
-            //处理无参数指令
-            code = dispatch_cmd(command, NULL, &login);
-            reply_msg(client_fd, code, sentence);
-        }
-        else if (count == 2){
-            printf("read 2, command: %s, para: %s\n", command, parameter);
-            //处理有参数指令
-            code = dispatch_cmd(command, parameter, &login);
-            reply_msg(client_fd, code, sentence);
-        }
-        else {
-            printf("read more than 2.\n");
-            send_const_msg(client_fd, "501 too many parameters.\r\n");
-            continue;
-        }
-        if (code == 221) break;
-        // send(client_fd, sentence, len, MSG_WAITALL);
-    }
-
-    printf("connection closed.\n");
-    free(sentence);
-    free(command);
-    free(parameter);
-    close(client_fd);
-    return;
-}
-
 int main(int argc, char const *argv[])
 {
     //解析命令行参数
@@ -167,7 +111,87 @@ int main(int argc, char const *argv[])
     return 0;
 }
 
-int dispatch_cmd(char* cmd, char* para, LoginStatus* login) {
+void serve_client(int client_fd) {
+
+    char* sentence = (char*)malloc(8192);
+    char* command = (char*)malloc(1024);
+    char* parameter = (char*)malloc(1024);
+    char* name_prefix = (char*)malloc(256);
+    int count = 0; //计算sscnaf取到的数量
+    int len; //接受消息的长度
+    char check_s; //检测输入长度
+    LoginStatus login; //记录登录状态
+    int code;
+    PreStore Premsg; //保存上一条消息
+    DataInfo data_info;
+
+    //初始化变量
+    login = unlogged;
+    Premsg.premsg = OTHER;
+    sprintf(name_prefix, "%s", file_root);
+    data_info.data_fd = 0;
+
+    //向客户端发送服务器已经准备好的消息
+    send_const_msg(client_fd, "220 FTP server ready.\r\n");
+
+    //客户端发送的消息
+    while (1) {
+        count = 0;
+
+        len = recv(client_fd, sentence, 8192, 0);
+        //长度小于2代表断开连接
+        if (len < 2) break;
+
+        //对消息进行预处理
+        sentence[len] = '\0';
+        remove_enter(sentence);
+
+        //对内容进行匹配
+        count = sscanf(sentence, "%s %s %c", command, parameter, &check_s);
+
+        if (count < 0) {
+            printf("None string read.\n");
+            send_const_msg(client_fd, "500 No Verb found.\r\n");
+            continue;
+        }
+        else if (count == 1) {
+            // printf("read 1, command: %s\n", command);
+            //处理无参数指令
+            code = dispatch_cmd(command, NULL, &login, name_prefix, &Premsg, &data_info);
+            reply_msg(client_fd, code, sentence, name_prefix);
+        }
+        else if (count == 2){
+            // printf("read 2, command: %s, para: %s\n", command, parameter);
+            //处理有参数指令
+            code = dispatch_cmd(command, parameter, &login, name_prefix, &Premsg, &data_info);
+            reply_msg(client_fd, code, sentence, name_prefix);
+        }
+        else {
+            //此处可能需要处理文件名带有空格的指令
+            printf("read more than 2.\n");
+            send_const_msg(client_fd, "501 too many parameters.\r\n");
+            continue;
+        }
+
+        //code为221则断开连接
+        if (code == 221) break;
+    }
+
+    printf("connection closed.\n");
+
+    //释放空间
+    free(sentence);
+    free(command);
+    free(parameter);
+    free(name_prefix);
+
+    close(client_fd);
+    return;
+}
+
+
+int dispatch_cmd(char* cmd, char* para, LoginStatus* login, 
+    char* name_prefix, PreStore* Premsg, DataInfo* data_info) {
     // 530 for permission is denied.
     int code;
     if (strcmp(cmd, "USER") == 0) {
@@ -179,35 +203,43 @@ int dispatch_cmd(char* cmd, char* para, LoginStatus* login) {
     else if (strcmp(cmd, "QUIT") == 0) {
         code = cmd_quit(para, login);
     }
+    else if (strcmp(cmd, "TYPE") == 0) {
+        code = cmd_type(para, login);
+    }
+    else if (strcmp(cmd, "SYST") == 0) {
+        code = cmd_syst(para, login);
+    }
+    else if (strcmp(cmd, "CWD") == 0) {
+        code = cmd_cwd(para, login, name_prefix);
+    }
+    else if (strcmp(cmd, "PWD") == 0) {
+        code = cmd_pwd(para, login);
+    }
+    else if (strcmp(cmd, "MKD") == 0) {
+        code = cmd_mkd(para, login, name_prefix);
+    }
+    else if (strcmp(cmd, "RMD") == 0) {
+        code = cmd_rmd(para, login, name_prefix);
+    }
+    else if (strcmp(cmd, "RNFR") == 0) {
+        code = cmd_rnfr(para, login, name_prefix, Premsg);
+    }
+    else if (strcmp(cmd, "RNTO") == 0) {
+        code = cmd_rnto(para, login, name_prefix, Premsg);
+    }
+    else if (strcmp(cmd, "PASV") == 0) {
+        code = cmd_pasv(para, login, data_info);
+    }
+    else if (strcmp(cmd, "PORT") == 0) {
+        code = cmd_port(para, login, data_info);
+    }
     else {
         code = 502;
     }
-    // if (*login == unlogged) {
-    //     //未登录，只期望USER，其他的均为530
-    //     code = 502;
-    //     if (strcmp(cmd, "USER") == 0)
-    //         
-    // }
-    // else if (*login == need_pass){
-    //     //已经使用USER返回了331，期望使用PASS,pass只有在user之后会发起
-    //     code = 530;
-    //     if (strcmp(cmd, "PASS") == 0)
-    //         code = cmd_pass(para, login);
-    // }
-    // else if (*login == logged) {
-    //     //已经登录,默认502
-    //     code = 502;
-    //     if (strcmp(cmd, "PASS") == 0)
-    //         code = cmd_pass(para, login);
-    //     // else if (strcmp(cmd, ))
-    // }
-    // else {
-    //     code = 500;
-    // }
     return code;
 }
 
-void reply_msg(int client_fd, int code, char* sentence) {
+void reply_msg(int client_fd, int code, char* sentence, char* name_prefix) {
     switch (code) {
         case 500:
             sprintf(sentence, "%d %s\r\n", code, "syntax error, please check your input.");
@@ -216,7 +248,7 @@ void reply_msg(int client_fd, int code, char* sentence) {
             sprintf(sentence, "%d %s\r\n", code, "unsupported verb.");
             break;
         case 503:
-            sprintf(sentence, "%d %s\r\n", code, "wrong usage of PASS, should be after USER.");
+            sprintf(sentence, "%d %s\r\n", code, "this message should be after another one.");
             break;
         case 504:
             sprintf(sentence, "%d %s\r\n", code, "parameter error, please check your parameter.");
@@ -239,6 +271,21 @@ void reply_msg(int client_fd, int code, char* sentence) {
             break;
         case 221:
             sprintf(sentence, "%d %s\r\n", code, "Bye.");
+            break;
+        case 215:
+            sprintf(sentence, "%d %s\r\n", code, "UNIX Type: L8");
+            break;
+        case 257:
+            sprintf(sentence, "%d \"%s\" is current directory.\r\n", code, name_prefix);
+            break;
+        case 250:
+            sprintf(sentence, "%d Okay, \"%s\" is current directory.\r\n", code, name_prefix);
+            break;
+        case 550:
+            sprintf(sentence, "%d %s\r\n", code, "No such file or directory or creation failed.");
+            break;
+        case 350:
+            sprintf(sentence, "%d %s\r\n", code, "The file exists.");
             break;
         default:
             sprintf(sentence, "%d %s\r\n", code, "this code didn't has a custom message.");

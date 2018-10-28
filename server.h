@@ -9,13 +9,14 @@
 //全局变量
 short unsigned lis_port = 21;
 int listenfd;
-char file_root[128] = {0};
+char file_root[256] = {0};
 
 int server_init();
 
 void serve_client(int client_fd);
 
-int dispatch_cmd(char* cmd, char* para, LoginStatus* login);
-void reply_msg(int client_fd, int code, char* sentence);
+int dispatch_cmd(char* cmd, char* para, LoginStatus* login, 
+	char* name_prefix, PreStore* Premsg, DataInfo* data_info);
+void reply_msg(int client_fd, int code, char* sentence, char* name_prefix);
 
 #endif
