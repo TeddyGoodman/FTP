@@ -5,7 +5,9 @@
 
 #include <stdio.h>
 #include "utility.h"
+#include "session.h"
 
+char server_ip[] = "127.0.0.1";
 //全局变量
 short unsigned lis_port = 21;
 int listenfd;
@@ -15,8 +17,8 @@ int server_init();
 
 void serve_client(int client_fd);
 
-int dispatch_cmd(char* cmd, char* para, LoginStatus* login, 
-	char* name_prefix, PreStore* Premsg, DataInfo* data_info);
-void reply_msg(int client_fd, int code, char* sentence, char* name_prefix);
+int dispatch_cmd(char* cmd, char* para, session* sess);
+
+void* serve_client_pthread(void* ptr);
 
 #endif

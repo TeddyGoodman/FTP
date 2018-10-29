@@ -3,7 +3,7 @@ all: server.out client.out
 clean:
 	rm server.out client.out
 
-server.out: server.c utility.c command.c
+server.out: server.c utility.c command.c session.c
 	gcc -o server.out -Wall server.c utility.c command.c
 
 client.out: client.c

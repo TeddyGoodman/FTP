@@ -14,6 +14,9 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <time.h>
 
 void remove_enter(char* str) {
 	int i = 0;
@@ -27,11 +30,11 @@ void remove_enter(char* str) {
 	}
 }
 
-void send_const_msg(int fd, const char* str) {
-	int len = strlen(str);
-	send(fd, (char *)str, len, MSG_WAITALL);
-	return;
-}
+// void send_const_msg(int fd, const char* str) {
+// 	int len = strlen(str);
+// 	send(fd, (char *)str, len, MSG_WAITALL);
+// 	return;
+// }
 
 //删除某个目录，0代表成功，-1代表失败
 int remove_dir(char* dir) {
@@ -110,4 +113,25 @@ char* get_absolute_dir(char* name_prefix, char* parameter, int is_file) {
         return NULL;
     }
     else return temp_dir;
+}
+
+char* file_info(struct stat *dir_stat, char* file_name){
+    char* info = (char*)malloc(256);
+    int offset = 0;
+    offset = sprintf(info, "%s | ", file_name);
+
+    switch (dir_stat->st_mode & S_IFMT) {
+       case S_IFBLK:  offset = sprintf(info + offset, "%s | ", "block device");            break;
+       case S_IFCHR:  offset = sprintf(info + offset, "%s | ", "character device");        break;
+       case S_IFDIR:  offset = sprintf(info + offset, "%s | ", "directory");               break;
+       case S_IFIFO:  offset = sprintf(info + offset, "%s | ", "FIFO/pipe");               break;
+       case S_IFLNK:  offset = sprintf(info + offset, "%s | ", "symlink");                 break;
+       case S_IFREG:  offset = sprintf(info + offset, "%s | ", "regular file");            break;
+       case S_IFSOCK: offset = sprintf(info + offset, "%s | ", "socket");                  break;
+       default:       offset = sprintf(info + offset, "%s | ", "unknown?");                break;
+    }
+
+    offset = sprintf(info + offset, "%ld bytes | ", (long) dir_stat->st_blksize);
+    sprintf(info + offset, "%s\r\n", ctime(dir_stat->st_mtime));
+    return info;
 }
