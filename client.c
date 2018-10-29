@@ -24,7 +24,7 @@ int cmd_port(char* para){
 	//创建socket
 	if ((data_lis_port = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
 		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
-		break;
+		return 1;
 	}
 
 	//设置本机的ip和port
@@ -37,13 +37,13 @@ int cmd_port(char* para){
 	//将本机的ip和port与socket绑定
 	if (bind(data_lis_port, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
 		printf("Error bind(): %s(%d)\n", strerror(errno), errno);
-		break;
+		return 1;
 	}
 
 	//开始监听socket
 	if (listen(data_lis_port, 1) == -1) {
 		printf("Error listen(): %s(%d)\n", strerror(errno), errno);
-		break;
+		return 1;
 	}
 	return 0;
 }
@@ -54,6 +54,8 @@ int cmd_pasv(char* sentence) {
 	int i = 0;
 	while(sentence[i] != '=') i++;
 	sscanf(sentence + i, "=%d,%d,%d,%d,%d,%d", &h1, &h2, &h3, &h4, &p1, &p2);
+	struct sockaddr_in addr;
+	
 	//创建socket
 	if ((data_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
 		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
@@ -81,6 +83,8 @@ int cmd_pasv(char* sentence) {
 int cmd_retr() {
 	char* buff = (char*)malloc(4096);
 	if (is_pasv == 0) {
+		struct sockaddr_in client_fd;
+		unsigned int size_sock;
 		if ((data_fd = accept(data_lis_port, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
 			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
 			free(buff);
@@ -88,9 +92,9 @@ int cmd_retr() {
 		}
 		printf("FROM DATA Connect:\n");
 		while (1) {
-			int size = read(data_fd, buff, sizeof(buff));
+			int size = read(data_fd, buff, 4096);
 			if (size != 0)
-				printf("%s\n", buff);
+				printf("%s", buff);
 			else break;
 		}
 		free(buff);
@@ -98,12 +102,16 @@ int cmd_retr() {
 	}
 	else {
 		printf("FROM DATA Connect:\n");
+		int total = 0;
 		while (1) {
-			int size = read(data_fd, buff, sizeof(buff));
-			if (size != 0)
+			int size = read(data_fd, buff, 4096);
+			if (size != 0){
+				total += size;
 				printf("%s", buff);
+			}
 			else break;
 		}
+		printf("got %d\n", total);
 		free(buff);
 		return 0;
 	}
@@ -145,9 +153,9 @@ int main(int argc, char **argv) {
 	
 	char* cmd = (char*)malloc(256);
 	char* para = (char*)malloc(256);
-	char* buff = (char*)malloc(4096);
-    unsigned int size_sock = sizeof(struct sockaddr);
-	struct sockaddr_in client_fd;
+	//char* buff = (char*)malloc(4096);
+    //unsigned int size_sock = sizeof(struct sockaddr);
+	//struct sockaddr_in client_fd;
 
 	while (1) {
 		printf("my_ftpclient > ");
@@ -167,14 +175,8 @@ int main(int argc, char **argv) {
 		if (strcmp(cmd, "PORT") == 0) {
 			cmd_port(para);
 		}
-		else if (strcmp(cmd, "RETR") == 0) {
-			cmd_retr();
-		}
 		else if (strcmp(cmd, "STOR") == 0) {
 			break;
-		}
-		else if (strcmp(cmd, "LIST") == 0) {
-			cmd_retr();
 		}
 		
 		int m = recv(sockfd, sentence, 8192, 0);
@@ -185,6 +187,12 @@ int main(int argc, char **argv) {
 
 		if (strcmp(cmd, "PASV") == 0) {
 			cmd_pasv(sentence);
+		}
+		else if (strcmp(cmd, "LIST") == 0) {
+			cmd_retr();
+		}
+		else if (strcmp(cmd, "RETR") == 0) {
+			cmd_retr();
 		}
 
 		if (sscanf(sentence, "%d", &code) != 0)

@@ -37,6 +37,7 @@ int cmd_user(char* para, session* sess) {
 	// 331 or 332 for permission might be granted after a PASS request
 	if (strcmp(para, "anonymous") == 0) {
 		sess->login_status = need_pass;
+		reply_custom_msg(sess, 331, "require password, please use PASS");
 		return 331;
 	}
 	else {
@@ -468,7 +469,8 @@ int cmd_port(char* para, session* sess) {
 		reply_form_msg(sess, 500);
 		return 500;
 	}
-
+	
+	sess->current_pasv = 0;
 	reply_custom_msg(sess, 200, "Okay.");
 	return 200;
 }
@@ -489,15 +491,16 @@ int cmd_list(char* para, session* sess) {
 		}
 		else {
 			reply_custom_msg(sess, 150, "Begin listing.");
-			reply_list(sess, abs_dir);
-			return 150;
-
+			int temp_code = reply_list(sess, abs_dir);
+			reply_form_msg(sess, temp_code);
+			return temp_code;
 		}
 	}
 	else {
 		reply_custom_msg(sess, 150, "Begin listing.");
-		reply_list(sess, sess->working_root);
-		return 150;
+		int temp_code = reply_list(sess, sess->working_root);
+		reply_form_msg(sess, temp_code);
+		return temp_code;
 	}
 
 }
@@ -532,8 +535,8 @@ int reply_list(session* sess, char* dir) {
     struct dirent *dp;
     int offset = 0;
 
-    offset = sprintf(list_res, "   name   |   type   |   size   |   modified time\r\n");
-
+    offset += sprintf(list_res, "%s", "   name   |   type   |   size   |   modified time\r\n");
+	
 	//获取目录属性失败
     if (stat(dir, &dir_stat) < 0) return 451;
 
@@ -548,15 +551,21 @@ int reply_list(session* sess, char* dir) {
             // 忽略 . 和 ..
             if (strcmp(".", dp->d_name) == 0 ) continue;
             if (strcmp("..", dp->d_name) == 0 ) continue;
-
-    		offset = sprintf(list_res + offset, "%s", file_info(&dir_stat, dp->d_name));
+			
+			char* temp_info;
+			temp_info = file_info(&dir_stat, dp->d_name);
+    		offset += sprintf(list_res + offset, "%s", temp_info);
+			free(temp_info);
         }
         closedir(dir_p);
     }
     else return 451;
 
-	send(sess->client_fd, list_res, strlen(list_res), MSG_WAITALL);
+	//printf("list_res: %s", list_res);
+	//printf("%d\n", offset);
+	send(sess->data_fd, list_res, strlen(list_res), MSG_WAITALL);
 	//传输完成
+	//sleep(0.01);
 	close(sess->data_fd);
 	if (sess->current_pasv == 1) {
 		//pasv模式
@@ -591,7 +600,9 @@ int cmd_retr(char* para, session* sess) {
 		return 451;
 	}
 
-	return retrieve_file(sess, file);
+	int temp_code = retrieve_file(sess, file);
+	reply_form_msg(sess, temp_code);
+	return temp_code;
 	// accepts 226 if the entire file was successfully written to the server's TCP buffers;
 	// rejects 425 if no TCP connection was established;
 	// rejects 426 if the TCP connection was established but then broken by the client or by network failure; or
@@ -624,7 +635,9 @@ int cmd_stor(char* para, session* sess) {
 
 	reply_custom_msg(sess, 150, "Begin store the given file.");
 
-	return store_file(sess, file);
+	int temp_code = store_file(sess, file);
+	reply_form_msg(sess, temp_code);
+	return temp_code;
 }
 
 int retrieve_file(session* sess, int file){

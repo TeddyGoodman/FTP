@@ -136,7 +136,7 @@ void serve_client(int client_fd) {
     char* parameter = (char*)malloc(256);
 
     //向客户端发送服务器已经准备好的消息
-    reply_custom_msg(&client_sess, 220, "FTP server ready.\r\n");
+    reply_custom_msg(&client_sess, 220, "FTP server ready.");
 
     //客户端发送的消息
     while (1) {
@@ -155,7 +155,7 @@ void serve_client(int client_fd) {
 
         if (count < 0) {
             printf("None string read.\n");
-            reply_custom_msg(&client_sess, 500, "No Verb found.\r\n");
+            reply_custom_msg(&client_sess, 500, "No Verb found.");
             continue;
         }
         else if (count == 1) {
@@ -169,7 +169,7 @@ void serve_client(int client_fd) {
         else {
             //此处可能需要处理文件名带有空格的指令
             printf("read more than 2.\n");
-            reply_custom_msg(&client_sess, 501, "too many parameters.\r\n");
+            reply_custom_msg(&client_sess, 501, "too many parameters.");
             continue;
         }
 
@@ -233,6 +233,12 @@ int dispatch_cmd(char* cmd, char* para, session* sess) {
     else if (strcmp(cmd, "RETR") == 0) {
         code = cmd_retr(para, sess);
     }
+	else if (strcmp(cmd, "STOR") == 0) {
+		code = cmd_stor(para, sess);
+	}
+	else if (strcmp(cmd, "LIST") == 0) {
+		code = cmd_list(para, sess);
+	}
     else {
         code = 502;
         reply_form_msg(sess, code);
