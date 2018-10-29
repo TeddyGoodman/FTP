@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/sendfile.h>
 #include <errno.h>
+#include <fcntl.h>
 
 // cmd函数返回code，在dispatch中返回相应信息
 // cmd函数中，先判断参数是否正确，以返回504或501
@@ -274,24 +275,33 @@ int cmd_retr(char* para, LoginStatus *login, char* name_prefix, DataInfo* data_i
 
 	if (abs_dir == NULL) return 550;
 
-	int file = open(abs_dir, O_RDONLY);
+	int file = open(abs_dir, O_RDONLY);//|O_BINARY);
 	if (file == -1) {
 		// 没有权限
 		return 550;
 	}
-
+	
+	if (connect(data_info->data_fd, (struct sockaddr*)&data_info->client_addr,
+				sizeof(data_info->client_addr)) < 0) {
+		printf("Error connect(): %s(%d)\n", strerror(errno), errno);
+		return 550;
+	}
+	
 	struct stat file_stat;
 	fstat(file, &file_stat);
 
 	long long bytes_to_send = file_stat.st_size;
+	printf("total: %lld", bytes_to_send);
 	while(bytes_to_send) {
 		int temp_size = bytes_to_send > 4096 ? 4096 : bytes_to_send;
 		int sent_size = sendfile(data_info->data_fd, file, NULL, temp_size);
+		printf("sent: %d", sent_size);
 		if (sent_size == -1) break;
 		bytes_to_send -= sent_size;
 	}
 
 	close(data_info->data_fd);
 	close(file);
+	printf("closed");
 	return 226;
 }

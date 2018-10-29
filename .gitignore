@@ -54,3 +54,6 @@ dkms.conf
 # MacOS files
 .DS_Store
 */.DS_Store
+
+# ipython notebook
+.ipynb_checkpoints/

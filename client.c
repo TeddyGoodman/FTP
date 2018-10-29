@@ -8,6 +8,7 @@
 #include <string.h>
 #include <memory.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int main(int argc, char **argv) {
@@ -43,6 +44,13 @@ int main(int argc, char **argv) {
 	printf("%s", sentence);
 
 	int code;
+	int listenfd;
+	
+	char* cmd = (char*)malloc(256);
+	char* para = (char*)malloc(256);
+	char* buff = (char*)malloc(4096);
+    unsigned int size_sock = sizeof(struct sockaddr);
+	struct sockaddr_in client_fd;
 	while (1) {
 		printf("my_ftpclient > ");
 		//获取键盘输入
@@ -55,6 +63,53 @@ int main(int argc, char **argv) {
 
 		send(sockfd, sentence, len, MSG_WAITALL);
 		// printf("msg sent to the server.\n");
+			
+		sscanf(sentence, "%s %s", cmd, para);
+		
+		if (strcmp(cmd, "PORT") == 0) {
+			int h1,h2,h3,h4,p1,p2;
+			sscanf(para, "%d,%d,%d,%d,%d,%d", &h1, &h2, &h3, &h4, &p1, &p2);
+			struct sockaddr_in addr;
+
+			//创建socket
+			if ((listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
+				printf("Error socket(): %s(%d)\n", strerror(errno), errno);
+				break;
+			}
+
+			//设置本机的ip和port
+			memset(&addr, 0, sizeof(addr));
+			addr.sin_family = AF_INET;
+			addr.sin_port = htons(p1*256 + p2);
+			//监听任何来源
+			addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+			//将本机的ip和port与socket绑定
+			if (bind(listenfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+				printf("Error bind(): %s(%d)\n", strerror(errno), errno);
+				break;
+			}
+
+			//开始监听socket
+			if (listen(listenfd, 1) == -1) {
+				printf("Error listen(): %s(%d)\n", strerror(errno), errno);
+				break;
+			}
+		}
+		else if (strcmp(cmd, "RETR") == 0) {
+			int connfd;
+			if ((connfd = accept(listenfd, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
+				printf("Error accept(): %s(%d)\n", strerror(errno), errno);
+				continue;
+			}
+			while (1) {
+				int size = read(connfd, buff, sizeof(buff));
+				if (size != 0)
+					printf("%s\n", buff);
+				else break;
+			}
+			continue;
+		}
 		
 		int m = recv(sockfd, sentence, 8192, 0);
 		// printf("read from server: %d\n", m);
