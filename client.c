@@ -16,22 +16,22 @@ int main(int argc, char **argv) {
 	char sentence[8192];
 	int len;
 
-	//´´½¨socket
+	//åˆ›å»ºsocket
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
 		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
 
-	//ÉèÖÃÄ¿±êÖ÷»úµÄipºÍport
+	//è®¾ç½®ç›®æ ‡ä¸»æœºçš„ipå’Œport
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(21);
-	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) <= 0) {			//×ª»»ipµØÖ·:µã·ÖÊ®½øÖÆ-->¶ş½øÖÆ
+	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) <= 0) {			//è½¬æ¢ipåœ°å€:ç‚¹åˆ†åè¿›åˆ¶-->äºŒè¿›åˆ¶
 		printf("Error inet_pton(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
 
-	//Á¬½ÓÉÏÄ¿±êÖ÷»ú£¨½«socketºÍÄ¿±êÖ÷»úÁ¬½Ó£©-- ×èÈûº¯Êı
+	//è¿æ¥ä¸Šç›®æ ‡ä¸»æœºï¼ˆå°†socketå’Œç›®æ ‡ä¸»æœºè¿æ¥ï¼‰-- é˜»å¡å‡½æ•°
 	if (connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
 		printf("Error connect(): %s(%d)\n", strerror(errno), errno);
 		return 1;
@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
 	int code;
 	while (1) {
 		printf("my_ftpclient > ");
-		//»ñÈ¡¼üÅÌÊäÈë
+		//è·å–é”®ç›˜è¾“å…¥
 		fgets(sentence, 4096, stdin);
 		len = strlen(sentence);
 		sentence[len - 1] = '\r';
