@@ -3,6 +3,8 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <stdlib.h>
+#include <string.h>
 
 int init_session(session* sess, int client_fd, char* global_file_root) {
 	sess->sentence = (char*)malloc(8192);
@@ -15,7 +17,7 @@ int init_session(session* sess, int client_fd, char* global_file_root) {
 	sess->pasv_lis_fd = 0;
 	sess->client_fd = client_fd;
 	
-	sprint(sess->working_root, "%s", global_file_root);
+	sprintf(sess->working_root, "%s", global_file_root);
 	return 0;
 }
 

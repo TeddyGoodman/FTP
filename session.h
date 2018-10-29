@@ -1,5 +1,5 @@
-#ifndef SESSION_H
-#define SESSION_H
+#ifndef CLIENT_SESSION_H
+#define CLIENT_SESSION_H
 
 #include <sys/socket.h>
 #include <arpa/inet.h>

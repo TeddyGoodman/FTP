@@ -3,12 +3,43 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <errno.h>
-
 #include <string.h>
 #include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "client.h"
+
+int cmd_port(){
+	int h1,h2,h3,h4,p1,p2;
+	sscanf(para, "%d,%d,%d,%d,%d,%d", &h1, &h2, &h3, &h4, &p1, &p2);
+	struct sockaddr_in addr;
+
+	//创建socket
+	if ((listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
+		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
+		break;
+	}
+
+	//设置本机的ip和port
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(p1*256 + p2);
+	//监听任何来源
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+	//将本机的ip和port与socket绑定
+	if (bind(listenfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+		printf("Error bind(): %s(%d)\n", strerror(errno), errno);
+		break;
+	}
+
+	//开始监听socket
+	if (listen(listenfd, 1) == -1) {
+		printf("Error listen(): %s(%d)\n", strerror(errno), errno);
+		break;
+	}
+}
 
 int main(int argc, char **argv) {
 	int sockfd;
@@ -66,34 +97,7 @@ int main(int argc, char **argv) {
 		sscanf(sentence, "%s %s", cmd, para);
 		
 		if (strcmp(cmd, "PORT") == 0) {
-			int h1,h2,h3,h4,p1,p2;
-			sscanf(para, "%d,%d,%d,%d,%d,%d", &h1, &h2, &h3, &h4, &p1, &p2);
-			struct sockaddr_in addr;
-
-			//创建socket
-			if ((listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
-				printf("Error socket(): %s(%d)\n", strerror(errno), errno);
-				break;
-			}
-
-			//设置本机的ip和port
-			memset(&addr, 0, sizeof(addr));
-			addr.sin_family = AF_INET;
-			addr.sin_port = htons(p1*256 + p2);
-			//监听任何来源
-			addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-			//将本机的ip和port与socket绑定
-			if (bind(listenfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-				printf("Error bind(): %s(%d)\n", strerror(errno), errno);
-				break;
-			}
-
-			//开始监听socket
-			if (listen(listenfd, 1) == -1) {
-				printf("Error listen(): %s(%d)\n", strerror(errno), errno);
-				break;
-			}
+			
 		}
 		else if (strcmp(cmd, "RETR") == 0) {
 			int connfd;

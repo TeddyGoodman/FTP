@@ -7,7 +7,6 @@
 #include "utility.h"
 #include "session.h"
 
-char server_ip[] = "127.0.0.1";
 //全局变量
 short unsigned lis_port = 21;
 int listenfd;

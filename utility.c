@@ -14,8 +14,6 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <time.h>
 
 void remove_enter(char* str) {
@@ -132,6 +130,6 @@ char* file_info(struct stat *dir_stat, char* file_name){
     }
 
     offset = sprintf(info + offset, "%ld bytes | ", (long) dir_stat->st_blksize);
-    sprintf(info + offset, "%s\r\n", ctime(dir_stat->st_mtime));
+    sprintf(info + offset, "%s\r\n", ctime(&(dir_stat->st_mtime)));
     return info;
 }
