@@ -33,7 +33,7 @@ void send_const_msg(int fd, const char* str) {
 	return;
 }
 
-//删除某个目录，直接返回code
+//删除某个目录，0代表成功，-1代表失败
 int remove_dir(char* dir) {
 
     char current_dir[] = ".";
@@ -76,43 +76,38 @@ int remove_dir(char* dir) {
     else return -1;
 }
 
-//通过prefix和输入参数获取绝对路径，成功返回路径，否则返回NULL，
+//通过prefix和输入参数获取绝对路径，文件或目录存在返回绝对路径，否则返回NULL
 //第三个参数: 0->目录，1->文件，-1->只做组合路径
 char* get_absolute_dir(char* name_prefix, char* parameter, int is_file) {
 	int len = strlen(name_prefix);
 	char* temp_dir = (char*)malloc(256);
+    int flag = 1;
+    
+    if (parameter[0] == '/')
+        //定义绝对路径
+        sprintf(temp_dir, "%s", parameter);
+    else {
+        //定义当前路径下的相对路径
+        if (name_prefix[len-1] == '/')
+            sprintf(temp_dir, "%s%s", name_prefix, parameter);
+        else sprintf(temp_dir, "%s/%s", name_prefix, parameter);
+    }
 
-	if (parameter[0] == '/'){
-		//定义绝对路径且存在
-		if (is_file > 0 && access(parameter, R_OK) == 0){
-			sprintf(temp_dir, "%s", parameter);
-			return temp_dir;
-		}
-		else if (is_file == 0 && access(parameter, 0) == 0){
-			sprintf(temp_dir, "%s", parameter);
-			return temp_dir;
-		}
-		else if (is_file < 0) {
-			sprintf(temp_dir, "%s", parameter);
-			return temp_dir;
-		}
-	}
-	else{
-		//定义当前路径下的相对路径
-		if (name_prefix[len-1] == '/')
-			sprintf(temp_dir, "%s%s", name_prefix, parameter);
-		else sprintf(temp_dir, "%s/%s", name_prefix, parameter);
+    //希望的路径保存在temp_dir中
+    struct stat file_stat;
+    if (is_file > 0) {
+        if (access(parameter, 0) != 0) flag = 0;
+        else if (stat(parameter, &file_stat) < 0) flag = 0;
+        else if (!S_ISREG(file_stat.st_mode)) flag = 0;
+    }
+    else if (is_file == 0) {
+        if (access(parameter, 0) != 0) flag = 0;
+    }
 
-		if (is_file > 0 && access(temp_dir, R_OK) == 0) {
-			return temp_dir;
-		}
-		else if (is_file == 0 && access(temp_dir, 0) == 0) {
-			return temp_dir;
-		}
-		else if (is_file < 0) {
-			return temp_dir;
-		}
-	}
-	free(temp_dir);
-	return NULL;
+    //否则只做合并
+    if (flag == 0) {
+        free(temp_dir);
+        return NULL;
+    }
+    else return temp_dir;
 }

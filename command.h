@@ -17,5 +17,6 @@ int cmd_rnto(char* para, LoginStatus *login, char* name_prefix, PreStore* Premsg
 int cmd_pasv(char* para, LoginStatus *login, DataInfo* data_info);
 int cmd_port(char* para, LoginStatus *login, DataInfo* data_info);
 
+int cmd_retr(char* para, LoginStatus *login, char* name_prefix, DataInfo* data_info);
 
 #endif

@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/sendfile.h>
 #include <errno.h>
 
 // cmd函数返回code，在dispatch中返回相应信息
@@ -261,4 +262,36 @@ int cmd_port(char* para, LoginStatus *login, DataInfo* data_info) {
 	}
 
 	return 200;
+}
+
+int cmd_retr(char* para, LoginStatus *login, char* name_prefix, DataInfo* data_info) {
+	if (para == NULL) return 504;
+	if (*login == unlogged || *login == need_pass) return 530;
+	
+	if (data_info->data_fd <= 0) return 425;
+
+	char* abs_dir = get_absolute_dir(name_prefix, para, 1);
+
+	if (abs_dir == NULL) return 550;
+
+	int file = open(abs_dir, O_RDONLY);
+	if (file == -1) {
+		// 没有权限
+		return 550;
+	}
+
+	struct stat file_stat;
+	fstat(file, &file_stat);
+
+	long long bytes_to_send = file_stat.st_size;
+	while(bytes_to_send) {
+		int temp_size = bytes_to_send > 4096 ? 4096 : bytes_to_send;
+		int sent_size = sendfile(data_info->data_fd, file, NULL, temp_size);
+		if (sent_size == -1) break;
+		bytes_to_send -= sent_size;
+	}
+
+	close(data_info->data_fd);
+	close(file);
+	return 226;
 }

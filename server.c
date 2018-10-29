@@ -233,6 +233,9 @@ int dispatch_cmd(char* cmd, char* para, LoginStatus* login,
     else if (strcmp(cmd, "PORT") == 0) {
         code = cmd_port(para, login, data_info);
     }
+    else if (strcmp(cmd, "RETR") == 0) {
+        code = cmd_retr(para, login, name_prefix, data_info);
+    }
     else {
         code = 502;
     }
