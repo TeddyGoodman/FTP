@@ -10,13 +10,19 @@
 #include <string.h>
 #include "client.h"
 
-int cmd_port(){
+int data_lis_port;
+int is_pasv;
+
+int data_fd;
+
+int cmd_port(char* para){
+	is_pasv = 0;
 	int h1,h2,h3,h4,p1,p2;
 	sscanf(para, "%d,%d,%d,%d,%d,%d", &h1, &h2, &h3, &h4, &p1, &p2);
 	struct sockaddr_in addr;
 
 	//创建socket
-	if ((listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
+	if ((data_lis_port = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
 		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
 		break;
 	}
@@ -29,15 +35,77 @@ int cmd_port(){
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	//将本机的ip和port与socket绑定
-	if (bind(listenfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+	if (bind(data_lis_port, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
 		printf("Error bind(): %s(%d)\n", strerror(errno), errno);
 		break;
 	}
 
 	//开始监听socket
-	if (listen(listenfd, 1) == -1) {
+	if (listen(data_lis_port, 1) == -1) {
 		printf("Error listen(): %s(%d)\n", strerror(errno), errno);
 		break;
+	}
+	return 0;
+}
+
+int cmd_pasv(char* sentence) {
+	is_pasv = 1;
+	int h1,h2,h3,h4,p1,p2;
+	int i = 0;
+	while(sentence[i] != '=') i++;
+	sscanf(sentence + i, "=%d,%d,%d,%d,%d,%d", &h1, &h2, &h3, &h4, &p1, &p2);
+	//创建socket
+	if ((data_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
+		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
+		return 1;
+	}
+
+	//设置目标主机的ip和port
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(p1 * 256 + p2);
+	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) <= 0) {			//转换ip地址:点分十进制-->二进制
+		printf("Error inet_pton(): %s(%d)\n", strerror(errno), errno);
+		return 1;
+	}
+
+	//连接上目标主机（将socket和目标主机连接）-- 阻塞函数
+	if (connect(data_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+		printf("Error connect(): %s(%d)\n", strerror(errno), errno);
+		return 1;
+	}
+
+	return 0;
+}
+
+int cmd_retr() {
+	char* buff = (char*)malloc(4096);
+	if (is_pasv == 0) {
+		if ((data_fd = accept(data_lis_port, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
+			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
+			free(buff);
+			return 1;
+		}
+		printf("FROM DATA Connect:\n");
+		while (1) {
+			int size = read(data_fd, buff, sizeof(buff));
+			if (size != 0)
+				printf("%s\n", buff);
+			else break;
+		}
+		free(buff);
+		return 0;
+	}
+	else {
+		printf("FROM DATA Connect:\n");
+		while (1) {
+			int size = read(data_fd, buff, sizeof(buff));
+			if (size != 0)
+				printf("%s", buff);
+			else break;
+		}
+		free(buff);
+		return 0;
 	}
 }
 
@@ -74,13 +142,13 @@ int main(int argc, char **argv) {
 	printf("%s", sentence);
 
 	int code;
-	int listenfd;
 	
 	char* cmd = (char*)malloc(256);
 	char* para = (char*)malloc(256);
 	char* buff = (char*)malloc(4096);
     unsigned int size_sock = sizeof(struct sockaddr);
 	struct sockaddr_in client_fd;
+
 	while (1) {
 		printf("my_ftpclient > ");
 		//获取键盘输入
@@ -97,21 +165,16 @@ int main(int argc, char **argv) {
 		sscanf(sentence, "%s %s", cmd, para);
 		
 		if (strcmp(cmd, "PORT") == 0) {
-			
+			cmd_port(para);
 		}
 		else if (strcmp(cmd, "RETR") == 0) {
-			int connfd;
-			if ((connfd = accept(listenfd, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
-				printf("Error accept(): %s(%d)\n", strerror(errno), errno);
-				continue;
-			}
-			while (1) {
-				int size = read(connfd, buff, sizeof(buff));
-				if (size != 0)
-					printf("%s\n", buff);
-				else break;
-			}
-			continue;
+			cmd_retr();
+		}
+		else if (strcmp(cmd, "STOR") == 0) {
+			break;
+		}
+		else if (strcmp(cmd, "LIST") == 0) {
+			cmd_retr();
 		}
 		
 		int m = recv(sockfd, sentence, 8192, 0);
@@ -119,6 +182,10 @@ int main(int argc, char **argv) {
 		sentence[m] = '\0';
 
 		printf("FROM SERVER: %s", sentence);
+
+		if (strcmp(cmd, "PASV") == 0) {
+			cmd_pasv(sentence);
+		}
 
 		if (sscanf(sentence, "%d", &code) != 0)
 			if (code == 221) break;
