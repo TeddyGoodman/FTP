@@ -203,7 +203,7 @@ int main(int argc, char **argv) {
 			sentence[m] = '\0';
 			printf("FROM SERVER: %s", sentence);
 		}
-		if (data_fd > 0) close(data_fd);
+		//if (data_fd > 0) close(data_fd);
 
 		if (sscanf(sentence, "%d", &code) != 0)
 			if (code == 221) break;

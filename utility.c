@@ -97,12 +97,12 @@ char* get_absolute_dir(char* name_prefix, char* parameter, int is_file) {
     //希望的路径保存在temp_dir中
     struct stat file_stat;
     if (is_file > 0) {
-        if (access(parameter, 0) != 0) flag = 0;
-        else if (stat(parameter, &file_stat) < 0) flag = 0;
+        if (access(temp_dir, 0) != 0) flag = 0;
+        else if (stat(temp_dir, &file_stat) < 0) flag = 0;
         else if (!S_ISREG(file_stat.st_mode)) flag = 0;
     }
     else if (is_file == 0) {
-        if (access(parameter, 0) != 0) flag = 0;
+        if (access(temp_dir, 0) != 0) flag = 0;
     }
 
     //否则只做合并

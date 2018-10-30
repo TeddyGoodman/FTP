@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/sendfile.h>
+//#include <sys/sendfile.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <time.h>
@@ -681,7 +681,6 @@ int retrieve_file(session* sess, int file){
 	while(bytes_to_send) {
 		int temp_size = bytes_to_send > 4096 ? 4096 : bytes_to_send;
 		int sent_size = sendfile(sess->data_fd, file, NULL, temp_size);
-		// printf("sent: %d", sent_size);
 		if (sent_size == -1) return 426;
 		bytes_to_send -= sent_size;
 	}
@@ -725,9 +724,15 @@ int store_file(session* sess, int file) {
 
     //开始接收
     int temp_size;
+    char* buff = (char*)malloc(4096);
     while (1) {
-    	temp_size = sendfile(file, sess->data_fd, NULL, 4096);
-    	if (!temp_size) break;
+    	temp_size = read(sess->data_fd, buff, 4096);
+    	if (temp_size) {
+    		wirte(file, buff, temp_size);
+    	}
+    	else break;
+    	//temp_size = sendfile(file, sess->data_fd, NULL, 4096);
+    	// if (!temp_size) break;
     }
 	//传输完成
 	close(sess->data_fd);
@@ -736,6 +741,7 @@ int store_file(session* sess, int file) {
 		close(sess->pasv_lis_fd);
 	}
 	close(file);
+	free(buff);
 	sess->current_pasv = -1;
 	return 226;
 }
