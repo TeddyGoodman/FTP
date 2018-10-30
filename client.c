@@ -84,7 +84,7 @@ int cmd_retr() {
 	char* buff = (char*)malloc(4096);
 	if (is_pasv == 0) {
 		struct sockaddr_in client_fd;
-		unsigned int size_sock;
+		unsigned int size_sock = sizeof(sockaddr_in);
 		if ((data_fd = accept(data_lis_port, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
 			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
 			free(buff);
