@@ -593,9 +593,10 @@ int reply_list(session* sess, char* dir) {
 		//pasv模式,服务器等待连接
 		if (sess->pasv_lis_fd <= 0) return 425;
 		//printf("开始pasv");
-		unsigned int size_sock = sizeof(struct sockaddr);
+		struct sockaddr_in client_fd;
+		unsigned int size_sock = sizeof(struct sockaddr_in);
 		if ((sess->data_fd = accept(sess->pasv_lis_fd,
-				(struct sockaddr *)&(sess->client_addr),&size_sock)) == -1) {
+				(struct sockaddr *)&(client_fd),&size_sock)) == -1) {
             printf("Error accept(): %s(%d)\n", strerror(errno), errno);
             return 426;
         }
@@ -664,9 +665,10 @@ int retrieve_file(session* sess, int file){
 	else{
 		//pasv模式,此时已经存在lis_fd
 		if (sess->pasv_lis_fd <= 0) return 425;
-		unsigned int size_sock = sizeof(struct sockaddr);
+		struct sockaddr_in client_fd;
+		unsigned int size_sock = sizeof(struct sockaddr_in);
 		if ((sess->data_fd = accept(sess->pasv_lis_fd,
-				(struct sockaddr *)&(sess->client_addr),&size_sock)) == -1) {
+				(struct sockaddr *)&(client_fd),&size_sock)) == -1) {
             printf("Error accept(): %s(%d)\n", strerror(errno), errno);
             return 426;
         }
@@ -712,9 +714,10 @@ int store_file(session* sess, int file) {
 	else{
 		//pasv模式,服务器等待连接
 		if (sess->pasv_lis_fd <= 0) return 425;
-		unsigned int size_sock = sizeof(struct sockaddr);
+		struct sockaddr_in client_fd;
+		unsigned int size_sock = sizeof(struct sockaddr_in);
 		if ((sess->data_fd = accept(sess->pasv_lis_fd,
-				(struct sockaddr *)&(sess->client_addr),&size_sock)) == -1) {
+				(struct sockaddr *)&(client_fd),&size_sock)) == -1) {
             printf("Error accept(): %s(%d)\n", strerror(errno), errno);
             return 426;
         }

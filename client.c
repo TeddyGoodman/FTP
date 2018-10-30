@@ -97,13 +97,12 @@ int cmd_retr() {
 		return 0;
 	}
 	else {
-		printf("FROM DATA Connect:\n");
 		//连接上目标主机（将socket和目标主机连接）-- 阻塞函数
 		if (connect(data_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
 			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
 			return 1;
 		}
-		//int total = 0;
+		printf("FROM DATA Connect:\n");
 		while (1) {
 			int size = read(data_fd, buff, 4096);
 			if (size != 0){
