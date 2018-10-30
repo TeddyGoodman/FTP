@@ -12,7 +12,7 @@
 
 int data_lis_port;
 int is_pasv;
-
+struct sockaddr_in server_addr;
 int data_fd;
 
 int cmd_port(char* para){
@@ -54,7 +54,7 @@ int cmd_pasv(char* sentence) {
 	int i = 0;
 	while(sentence[i] != '=') i++;
 	sscanf(sentence + i, "=%d,%d,%d,%d,%d,%d", &h1, &h2, &h3, &h4, &p1, &p2);
-	struct sockaddr_in addr;
+	//struct sockaddr_in addr;
 	
 	//创建socket
 	if ((data_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
@@ -63,17 +63,13 @@ int cmd_pasv(char* sentence) {
 	}
 
 	//设置目标主机的ip和port
-	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(p1 * 256 + p2);
-	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) <= 0) {			//转换ip地址:点分十进制-->二进制
+	memset(&server_addr, 0, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port = htons(p1 * 256 + p2);
+	
+	//转换ip地址:点分十进制-->二进制
+	if (inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr) <= 0) {
 		printf("Error inet_pton(): %s(%d)\n", strerror(errno), errno);
-		return 1;
-	}
-
-	//连接上目标主机（将socket和目标主机连接）-- 阻塞函数
-	if (connect(data_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-		printf("Error connect(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
 
@@ -102,16 +98,21 @@ int cmd_retr() {
 	}
 	else {
 		printf("FROM DATA Connect:\n");
-		int total = 0;
+		//连接上目标主机（将socket和目标主机连接）-- 阻塞函数
+		if (connect(data_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
+			return 1;
+		}
+		//int total = 0;
 		while (1) {
 			int size = read(data_fd, buff, 4096);
 			if (size != 0){
-				total += size;
+				//total += size;
 				printf("%s", buff);
 			}
 			else break;
 		}
-		printf("got %d\n", total);
+		//printf("got %d\n", total);
 		free(buff);
 		return 0;
 	}

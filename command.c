@@ -401,6 +401,7 @@ int cmd_pasv(char* para, session* sess) {
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(temp_port);
+	//printf("temp port: %d\n", temp_port);
     //监听任何来源
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
@@ -498,6 +499,7 @@ int cmd_list(char* para, session* sess) {
 			reply_custom_msg(sess, 150, "Begin listing.");
 			int temp_code = reply_list(sess, abs_dir);
 			reply_form_msg(sess, temp_code);
+			free(abs_dir);
 			return temp_code;
 		}
 	}
@@ -590,12 +592,15 @@ int reply_list(session* sess, char* dir) {
 	else{
 		//pasv模式,服务器等待连接
 		if (sess->pasv_lis_fd <= 0) return 425;
+		//printf("开始pasv");
 		unsigned int size_sock = sizeof(struct sockaddr);
 		if ((sess->data_fd = accept(sess->pasv_lis_fd,
 				(struct sockaddr *)&(sess->client_addr),&size_sock)) == -1) {
             printf("Error accept(): %s(%d)\n", strerror(errno), errno);
             return 426;
         }
+        //printf("Receive data connection from:%s:%hu\n", 
+			//   inet_ntoa(sess->client_addr.sin_addr), ntohs(sess->client_addr.sin_port));
     }
 
     //开始处理
@@ -632,6 +637,7 @@ int reply_list(session* sess, char* dir) {
     else return 451;
 
 	send(sess->data_fd, list_res, strlen(list_res), MSG_WAITALL);
+	free(list_res);
 	//传输完成
 	//sleep(0.01);
 	close(sess->data_fd);
