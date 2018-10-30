@@ -6,18 +6,18 @@
 */
 int is_pasv;
 //port模式下,本机需要监听，故需要监听socket
-int data_lis_port;
+int data_lis_port = 0;
 int control_fd;
 //保存服务器地址
 struct sockaddr_in server_addr;
 //data端链接
-int data_fd;
+int data_fd = 0;
 //连接服务器所在的IP
-char server_ip[] = "47.95.120.180";
+char server_ip[] = "127.0.0.1";
 //连接服务器的控制端口
 int control_port = 21;
 
-char root_directory[] = "/Users/naxin/Documents/THU";
+char root_directory[] = "/root/CSAPP/FTP";
 
 int client_init();
 

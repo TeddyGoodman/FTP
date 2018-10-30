@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
+#include <sys/sendfile.h>
+#include <dirent.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <unistd.h>
@@ -10,8 +13,8 @@
 #include <fcntl.h>
 #include <string.h>
 #include <memory.h>
-#include <string.h>
 #include <pthread.h>
+#include <time.h>
 #include "client.h"
 #include "utility.h"
 
@@ -144,6 +147,25 @@ int cmd_pasv(char* sentence) {
 	}
 
 	is_pasv = 1;
+	if (is_pasv == 0) {
+		//port模式
+		if (data_fd > 0) close(data_fd);
+		struct sockaddr_in client_fd;
+		unsigned int size_sock = sizeof(struct sockaddr_in);
+		if ((data_fd = accept(data_lis_port, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
+			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
+			//free(buff);
+			return 1;
+		}
+	}
+	else {
+		if (connect(data_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
+			//free(buff);
+			return 1;
+		}
+		printf("connect!");
+	}
 	return 0;
 }
 
@@ -170,7 +192,7 @@ void download_file(int file) {
     }
 	//传输完成
 	close(data_fd);
-	if (is_pasv == 1) {
+	if (is_pasv == 0) {
 		//pasv模式
 		close(data_lis_port);
 	}
@@ -208,7 +230,7 @@ void upload_file(int file) {
 
 	//传输完成,关闭连接
 	close(data_fd);
-	if (is_pasv == 1) {
+	if (is_pasv == 0) {
 		//pasv模式
 		close(data_lis_port);
 	}
@@ -262,7 +284,7 @@ int cmd_retr(char* sentence, char* para) {
 	sscanf(sentence, "%d", &ret_code);
 	if (ret_code != 226) {
 		close(data_fd);
-		if (is_pasv == 1) {
+		if (is_pasv == 0) {
 			//pasv模式
 			close(data_lis_port);
 		}
@@ -304,7 +326,7 @@ int cmd_stor(char* sentence, char* para) {
 
 	if (file <= 0) {
 		close(data_fd);
-		if (is_pasv == 1) {
+		if (is_pasv == 0) {
 			//pasv模式
 			close(data_lis_port);
 		}
@@ -323,7 +345,7 @@ int cmd_stor(char* sentence, char* para) {
 	sscanf(sentence, "%d", &ret_code);
 	if (ret_code != 226) {
 		close(data_fd);
-		if (is_pasv == 1) {
+		if (is_pasv == 0) {
 			//pasv模式
 			close(data_lis_port);
 		}
@@ -334,31 +356,14 @@ int cmd_stor(char* sentence, char* para) {
 
 int cmd_list(char* sentence) {
 	char* buff = (char*)malloc(4096);
-	int ret_code;
+	
 	// if (sscanf(sentence, "%d", &ret_code) != 1) return 1;
 	// if (ret_code != 150) {
 	// 	printf("ret code not 150\n");
 	// 	return 1;
 	// }
 
-	if (is_pasv == 0) {
-		//port模式
-		if (data_fd > 0) close(data_fd);
-		struct sockaddr_in client_fd;
-		unsigned int size_sock = sizeof(struct sockaddr_in);
-		if ((data_fd = accept(data_lis_port, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
-			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
-			free(buff);
-			return 1;
-		}
-	}
-	else {
-		if (connect(data_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
-			free(buff);
-			return 1;
-		}
-	}
+	
 
 	while (1) {
 		int size = read(data_fd, buff, 4096);
@@ -373,13 +378,10 @@ int cmd_list(char* sentence) {
 	sentence[m] = '\0';
 	printf("FROM SERVER: %s", sentence);
 
-	sscanf(sentence, "%d", &ret_code);
-	if (ret_code != 226) {
-		close(data_fd);
-		if (is_pasv == 1) {
-			//pasv模式
-			close(data_lis_port);
-		}
+	close(data_fd);
+	if (is_pasv == 0) {
+		//pasv模式
+		close(data_lis_port);
 	}
 	return 0;
 }
