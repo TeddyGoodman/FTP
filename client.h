@@ -13,11 +13,11 @@ struct sockaddr_in server_addr;
 //data端链接
 int data_fd = 0;
 //连接服务器所在的IP
-char server_ip[] = "127.0.0.1";
+char server_ip[] = "47.95.120.180";
 //连接服务器的控制端口
 int control_port = 21;
 
-char root_directory[] = "/root/CSAPP/FTP";
+char root_directory[] = "/Users/naxin/Documents/THU";
 
 int client_init();
 

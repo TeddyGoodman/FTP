@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/sendfile.h>
+//#include <sys/sendfile.h>
 #include <dirent.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -17,6 +17,26 @@
 #include <time.h>
 #include "client.h"
 #include "utility.h"
+
+int port_connect_data() {
+	//port模式
+	if (data_fd > 0) close(data_fd);
+	struct sockaddr_in client_fd;
+	unsigned int size_sock = sizeof(struct sockaddr_in);
+	if ((data_fd = accept(data_lis_port, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
+		printf("Error accept(): %s(%d)\n", strerror(errno), errno);
+		return 1;
+	}
+	return 0;
+}
+
+int pasv_connect_data() {
+	if (connect(data_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+		printf("Error connect(): %s(%d)\n", strerror(errno), errno);
+		return 1;
+	}
+	return 0;
+}
 
 int client_init() {
 	struct sockaddr_in addr;
@@ -89,6 +109,7 @@ int cmd_port(char* para){
 /*
 * Passive 模式，服务器发过来其地址，将其保存在server_addr
 * 创建data_fd作为数据端口的套接字
+* 服务器测试结果：PASV结束后要去连接服务器
 */
 int cmd_pasv(char* sentence) {
 	int h1,h2,h3,h4,p1,p2;
@@ -135,37 +156,14 @@ int cmd_pasv(char* sentence) {
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_port = htons(p1 * 256 + p2);
 
-	// printf("port is:%d,%d\n", p1,p2);
-
-	char ip_str[128];
-	sprintf(ip_str, "%d.%d.%d.%d", h1,h2,h3,h4);
-	
 	//转换ip地址:点分十进制-->二进制
 	if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0) {
 		printf("Error inet_pton(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
 
+	if (pasv_connect_data()) return 1;
 	is_pasv = 1;
-	if (is_pasv == 0) {
-		//port模式
-		if (data_fd > 0) close(data_fd);
-		struct sockaddr_in client_fd;
-		unsigned int size_sock = sizeof(struct sockaddr_in);
-		if ((data_fd = accept(data_lis_port, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
-			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
-			//free(buff);
-			return 1;
-		}
-	}
-	else {
-		if (connect(data_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
-			//free(buff);
-			return 1;
-		}
-		printf("connect!");
-	}
 	return 0;
 }
 
@@ -175,7 +173,7 @@ void* download_file_pthread(void* ptr) {
 }
 
 void* upload_file_pthread(void *ptr) {
-	download_file(*(int*)ptr);
+	upload_file(*(int*)ptr);
 	return NULL;
 }
 
@@ -251,20 +249,8 @@ int cmd_retr(char* sentence, char* para) {
 	}
 
 	if (is_pasv == 0) {
-		//port模式
-		if (data_fd > 0) close(data_fd);
-		struct sockaddr_in client_fd;
-		unsigned int size_sock = sizeof(struct sockaddr_in);
-		if ((data_fd = accept(data_lis_port, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
-			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
-			return 1;
-		}
-	}
-	else {
-		if (connect(data_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
-			return 1;
-		}
+		//port 模式，需要此时去连接
+		if (port_connect_data()) return 1;
 	}
 
 	//打开文件
@@ -303,20 +289,8 @@ int cmd_stor(char* sentence, char* para) {
 	}
 
 	if (is_pasv == 0) {
-		//port模式
-		if (data_fd > 0) close(data_fd);
-		struct sockaddr_in client_fd;
-		unsigned int size_sock = sizeof(struct sockaddr_in);
-		if ((data_fd = accept(data_lis_port, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
-			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
-			return 1;
-		}
-	}
-	else {
-		if (connect(data_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
-			return 1;
-		}
+		//port 模式，需要此时去连接
+		if (port_connect_data()) return 1;
 	}
 
 	//打开文件
@@ -356,15 +330,18 @@ int cmd_stor(char* sentence, char* para) {
 
 int cmd_list(char* sentence) {
 	char* buff = (char*)malloc(4096);
-	
-	// if (sscanf(sentence, "%d", &ret_code) != 1) return 1;
-	// if (ret_code != 150) {
-	// 	printf("ret code not 150\n");
-	// 	return 1;
-	// }
+	int ret_code;
+	if (sscanf(sentence, "%d", &ret_code) != 1) return 1;
+	if (ret_code != 150) {
+		printf("ret code not 150\n");
+		return 1;
+	}
 
+	if (is_pasv == 0) {
+		//port 模式，需要此时去连接
+		if (port_connect_data()) return 1;
+	}
 	
-
 	while (1) {
 		int size = read(data_fd, buff, 4096);
 		if (size != 0){
