@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-//#include <sys/sendfile.h>
+#include <sys/sendfile.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <time.h>
@@ -728,7 +728,7 @@ int store_file(session* sess, int file) {
     while (1) {
     	temp_size = read(sess->data_fd, buff, 4096);
     	if (temp_size) {
-    		wirte(file, buff, temp_size);
+    		write(file, buff, temp_size);
     	}
     	else break;
     	//temp_size = sendfile(file, sess->data_fd, NULL, 4096);
