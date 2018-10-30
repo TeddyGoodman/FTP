@@ -84,7 +84,7 @@ int cmd_retr() {
 	char* buff = (char*)malloc(4096);
 	if (is_pasv == 0) {
 		struct sockaddr_in client_fd;
-		unsigned int size_sock = sizeof(sockaddr_in);
+		unsigned int size_sock = sizeof(struct sockaddr_in);
 		if ((data_fd = accept(data_lis_port, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
 			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
 			free(buff);
@@ -187,9 +187,9 @@ int main(int argc, char **argv) {
 
 		if (strcmp(cmd, "PASV") == 0) {
 			cmd_pasv(sentence);
-			int m = recv(sockfd, sentence, 8192, 0);
-			sentence[m] = '\0';
-			printf("FROM SERVER: %s", sentence);
+			//int m = recv(sockfd, sentence, 8192, 0);
+			//sentence[m] = '\0';
+			//printf("FROM SERVER: %s", sentence);
 		}
 		else if (strcmp(cmd, "LIST") == 0) {
 			cmd_retr();
@@ -203,6 +203,7 @@ int main(int argc, char **argv) {
 			sentence[m] = '\0';
 			printf("FROM SERVER: %s", sentence);
 		}
+		if (data_fd > 0) close(data_fd);
 
 		if (sscanf(sentence, "%d", &code) != 0)
 			if (code == 221) break;

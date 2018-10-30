@@ -59,3 +59,7 @@ dkms.conf
 
 # ipython notebook
 .ipynb_checkpoints/
+
+# test data
+*.data
+
