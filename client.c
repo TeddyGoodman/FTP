@@ -20,7 +20,6 @@
 
 int port_connect_data() {
 	//port模式
-	if (data_fd > 0) close(data_fd);
 	struct sockaddr_in client_fd;
 	unsigned int size_sock = sizeof(struct sockaddr_in);
 	if ((data_fd = accept(data_lis_port, (struct sockaddr *) &client_fd, &size_sock)) == -1) {
@@ -83,7 +82,6 @@ int cmd_port(char* para){
 		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
-
 	//设置本机的ip和port
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
@@ -183,15 +181,15 @@ void download_file(int file) {
     char* buff = (char*)malloc(4096);
     while (1) {
     	temp_size = read(data_fd, buff, 4096);
-    	if (temp_size) {
-    		write(file, buff, temp_size);
+    	write(file, buff, temp_size);
+    	if (temp_size < 4096) {
+    		break;
     	}
-    	else break;
     }
 	//传输完成
 	close(data_fd);
 	if (is_pasv == 0) {
-		//pasv模式
+		//port模式
 		close(data_lis_port);
 	}
 	close(file);
@@ -225,6 +223,7 @@ void upload_file(int file) {
     	}
     	bytes_to_send -= read_size;
     }
+    free(buff);
 
 	//传输完成,关闭连接
 	close(data_fd);
@@ -236,6 +235,26 @@ void upload_file(int file) {
 	return;
 }
 
+void* show_list() {
+	char* buff = (char*)malloc(4096);
+	while (1) {
+		int size = read(data_fd, buff, 4096);
+		printf("%s", buff);
+		if (size < 4096){
+			break;
+		}
+	}
+	free(buff);
+
+	close(data_fd);
+	if (is_pasv == 0) {
+		//pasv模式
+		close(data_lis_port);
+	}
+
+	return NULL;
+}
+
 /*
 * retr指令，此时要开始从data端口接收东西
 * 但是需要使用多线程形式
@@ -245,6 +264,11 @@ int cmd_retr(char* sentence, char* para) {
 	if (sscanf(sentence, "%d", &ret_code) != 1) return 1;
 	if (ret_code != 150) {
 		printf("ret code not 150\n");
+		return 1;
+	}
+
+	if (is_pasv == -1) {
+		printf("no connection made.\n");
 		return 1;
 	}
 
@@ -261,14 +285,18 @@ int cmd_retr(char* sentence, char* para) {
 	//开始下载
 	pthread_t thid;
 	pthread_create(&thid, NULL, (void*)download_file_pthread, (void*)&file);
-	pthread_detach(thid);
+	//pthread_detach(thid);
 
 	int m = recv(control_fd, sentence, 8192, 0);
 	sentence[m] = '\0';
 	printf("FROM SERVER: %s", sentence);
 
 	sscanf(sentence, "%d", &ret_code);
-	if (ret_code != 226) {
+
+	if (ret_code == 226)
+		pthread_join(thid, NULL);
+	else {
+		pthread_cancel(thid);
 		close(data_fd);
 		if (is_pasv == 0) {
 			//pasv模式
@@ -276,6 +304,7 @@ int cmd_retr(char* sentence, char* para) {
 		}
 		close(file);
 	}
+	is_pasv = -1;
 	return 0;
 }
 
@@ -285,6 +314,11 @@ int cmd_stor(char* sentence, char* para) {
 	if (sscanf(sentence, "%d", &ret_code) != 1) return 1;
 	if (ret_code != 150) {
 		printf("ret code not 150\n");
+		return 1;
+	}
+
+	if (is_pasv == -1) {
+		printf("no connection made.\n");
 		return 1;
 	}
 
@@ -310,14 +344,18 @@ int cmd_stor(char* sentence, char* para) {
 	//开始上传
 	pthread_t thid;
 	pthread_create(&thid, NULL, (void*)upload_file_pthread, (void*)&file);
-	pthread_detach(thid);
+	//pthread_detach(thid);
 
 	int m = recv(control_fd, sentence, 8192, 0);
 	sentence[m] = '\0';
 	printf("FROM SERVER: %s", sentence);
 
 	sscanf(sentence, "%d", &ret_code);
-	if (ret_code != 226) {
+	
+	if (ret_code == 226)
+		pthread_join(thid, NULL);
+	else {
+		pthread_cancel(thid);
 		close(data_fd);
 		if (is_pasv == 0) {
 			//pasv模式
@@ -325,41 +363,46 @@ int cmd_stor(char* sentence, char* para) {
 		}
 		close(file);
 	}
+	is_pasv = -1;
 	return 0;
 }
 
 int cmd_list(char* sentence) {
-	char* buff = (char*)malloc(4096);
 	int ret_code;
 	if (sscanf(sentence, "%d", &ret_code) != 1) return 1;
 	if (ret_code != 150) {
 		printf("ret code not 150\n");
 		return 1;
 	}
-
+	if (is_pasv == -1) {
+		printf("no connection made.\n");
+		return 1;
+	}
 	if (is_pasv == 0) {
 		//port 模式，需要此时去连接
 		if (port_connect_data()) return 1;
 	}
-	
-	while (1) {
-		int size = read(data_fd, buff, 4096);
-		if (size != 0){
-			printf("%s", buff);
-		}
-		else break;
-	}
-	free(buff);
+
+	pthread_t thid;
+	pthread_create(&thid, NULL, (void*)show_list, NULL);
 
 	int m = recv(control_fd, sentence, 8192, 0);
 	sentence[m] = '\0';
 	printf("FROM SERVER: %s", sentence);
 
-	close(data_fd);
-	if (is_pasv == 0) {
-		//pasv模式
-		close(data_lis_port);
+	sscanf(sentence, "%d", &ret_code);
+	
+	if (ret_code == 226)
+		pthread_join(thid, NULL);
+	else {
+		pthread_cancel(thid);
+		close(data_fd);
+		if (is_pasv == 0) {
+			//pasv模式
+			close(data_lis_port);
+		}
 	}
+	is_pasv = -1;
 	return 0;
 }
 
@@ -421,7 +464,12 @@ int main(int argc, char **argv) {
 			sentence[m] = '\0';
 			printf("FROM SERVER: %s", sentence);
 
-			cmd_retr(sentence, para);
+			if (cmd_retr(sentence, para)) {
+
+				int m = recv(control_fd, sentence, 8192, 0);
+				sentence[m] = '\0';
+				printf("FROM SERVER: %s", sentence);
+			}
 		}
 		else if (strcmp(cmd, "STOR") == 0) {
 			//上传文件，首先直接将消息发给服务器
@@ -431,7 +479,12 @@ int main(int argc, char **argv) {
 			sentence[m] = '\0';
 			printf("FROM SERVER: %s", sentence);
 
-			cmd_stor(sentence, para);
+			if (cmd_stor(sentence, para)) {
+				
+				int m = recv(control_fd, sentence, 8192, 0);
+				sentence[m] = '\0';
+				printf("FROM SERVER: %s", sentence);
+			}
 		}
 		else if (strcmp(cmd, "LIST") == 0) {
 			//首先直接将消息发给服务器
@@ -441,7 +494,11 @@ int main(int argc, char **argv) {
 			sentence[m] = '\0';
 			printf("FROM SERVER: %s", sentence);
 
-			cmd_list(sentence);
+			if (cmd_list(sentence)) {
+				int m = recv(control_fd, sentence, 8192, 0);
+				sentence[m] = '\0';
+				printf("FROM SERVER: %s", sentence);
+			}
 		}
 		else {
 			//正常情况，直接显示服务器返回的消息

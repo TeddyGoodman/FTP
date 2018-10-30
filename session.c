@@ -9,6 +9,7 @@
 int init_session(session* sess, int client_fd, char* global_file_root) {
 	sess->sentence = (char*)malloc(8192);
 	sess->working_root = (char*)malloc(512);
+    sess->pre_msg_content = (char*)malloc(256);
 
 	sess->login_status = unlogged;
 	sess->is_RNFR = 0;
@@ -25,6 +26,7 @@ int init_session(session* sess, int client_fd, char* global_file_root) {
 int close_session(session* sess) {
 	free(sess->sentence);
 	free(sess->working_root);
+    free(sess->pre_msg_content);
 	return 0;
 }
 
@@ -57,6 +59,18 @@ void reply_form_msg(session* sess, int code) {
         case 530:
             sprintf(sess->sentence, "%d %s\r\n", code, "permission denied.");
             break;
+        case 226:
+            sprintf(sess->sentence, "%d %s\r\n", code, "data connection finished.");
+            break;
+        case 425:
+            sprintf(sess->sentence, "%d %s\r\n", code, "no TCP connection was established");
+            break;
+        case 426:
+            sprintf(sess->sentence, "%d %s\r\n", code, "network failure, try again?");
+            break;
+        case 451:
+            sprintf(sess->sentence, "%d %s\r\n", code, "read the file failed.");
+            break;
         default:
             sprintf(sess->sentence, "%d %s\r\n", code, "this code didn't has a custom message.");
             break;
@@ -65,34 +79,3 @@ void reply_form_msg(session* sess, int code) {
     send(sess->client_fd, sess->sentence, len, MSG_WAITALL);
     return;
 }
-
-// case 331:
-        // case 332:
-        //     sprintf(sess->sentence, "%d %s\r\n", code, "need password, please use PASS.");
-        //     break;
-        // case 230:
-        //     sprintf(sess->sentence, "%d %s\r\n", code, "");
-        //     break;
-        // case 202:
-        //     sprintf(sess->sentence, "%d %s\r\n", code, "permission already granted. no need for this.");
-        //     break;
-        // case 221:
-        //     sprintf(sess->sentence, "%d %s\r\n", code, "Bye.");
-        //     break;
-        // case 215:
-        //     sprintf(sess->sentence, "%d %s\r\n", code, "");
-        //     break;
-        // case 257:
-        //     sprintf(sess->sentence, "%d is current directory.\r\n", code);
-        //     break;
-        // case 250:
-        //     sprintf(sess->sentence, "%d Okay, is current directory.\r\n", code);
-        //     break;
-        // case 550:
-        //     sprintf(sess->sentence, "%d %s\r\n", code, "No such file or directory or creation failed.");
-        //     break;
-        // case 350:
-        //     sprintf(sess->sentence, "%d %s\r\n", code, "The file exists.");
-        //     break;
-        // case 227:
-        //     return;

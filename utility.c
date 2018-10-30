@@ -28,12 +28,6 @@ void remove_enter(char* str) {
 	}
 }
 
-// void send_const_msg(int fd, const char* str) {
-// 	int len = strlen(str);
-// 	send(fd, (char *)str, len, MSG_WAITALL);
-// 	return;
-// }
-
 //删除某个目录，0代表成功，-1代表失败
 int remove_dir(char* dir) {
 
@@ -108,9 +102,12 @@ char* get_absolute_dir(char* name_prefix, char* parameter, int is_file) {
     //否则只做合并
     if (flag == 0) {
         free(temp_dir);
+        temp_dir = NULL;
         return NULL;
     }
-    else return temp_dir;
+    else{
+        return temp_dir;
+    }
 }
 
 char* file_info(struct stat *dir_stat, char* file_name){

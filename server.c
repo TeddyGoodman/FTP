@@ -110,7 +110,6 @@ int main(int argc, char const *argv[])
         pthread_t thid;
         pthread_create(&thid, NULL, (void*)serve_client_pthread, (void*)&connfd);
         pthread_detach(thid);
-        // serve_client(connfd);
     }
 
     close(listenfd);
@@ -191,6 +190,16 @@ void serve_client(int client_fd) {
 
 int dispatch_cmd(char* cmd, char* para, session* sess) {
     int code;
+
+    //总体判断,修改is_RNFR
+    if (sess->is_RNFR && strcmp(cmd, "RNTO") != 0) {
+        sess->is_RNFR = 0;
+    }
+    if (sess->login_status == need_pass && strcmp(cmd, "PASS") != 0) {
+        sess->login_status = unlogged;
+    }
+
+    //注意判断支持的指令
     if (strcmp(cmd, "USER") == 0) {
         code = cmd_user(para, sess);
     }

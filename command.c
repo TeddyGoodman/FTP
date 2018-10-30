@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/sendfile.h>
+// #include <sys/sendfile.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <time.h>
@@ -18,7 +18,6 @@
 // cmd函数中，先判断参数是否正确，以返回504或501
 // 之后再判断登录状态
 
-// TODO: need to implement user table
 int cmd_user(char* para, session* sess) {
 	if (para == NULL) {
 		reply_form_msg(sess, 504);
@@ -71,7 +70,8 @@ int cmd_pass(char* para, session* sess) {
 	//202: USER时已经有权限。目前不存在USER直接230的情况
 
 	//匹配密码
-	int match = 1;
+	int match = 0;
+	if (strstr(para, "@")) match = 1;
 	if (match){
 		sess->login_status = logged;
 		reply_custom_msg(sess, 230, "permission granted. welcome!");
@@ -149,12 +149,7 @@ int cmd_pwd(char* para, session* sess) {
 		reply_form_msg(sess, 530);
 		return 530;
 	}
-	// ?:
-	// a double quote;
-	// the name prefix, with each double quote replaced by a pair of double quotes, and with \012 encoded as \000;
-	// another double quote;
-	// a space;
-	// useless human-readable information.
+
 	char* temp_msg = (char*)malloc(512);
 	sprintf(temp_msg, "%s is current directory.", sess->working_root);
 	reply_custom_msg(sess, 257, temp_msg);
@@ -421,6 +416,15 @@ int cmd_pasv(char* para, session* sess) {
 
     sess->current_pasv = 1;
     reply_custom_msg(sess, 227, reply_msg);
+
+    //返回227之后做这个事情
+	struct sockaddr_in client_fd;
+	unsigned int size_sock = sizeof(struct sockaddr_in);
+	if ((sess->data_fd = accept(sess->pasv_lis_fd,
+			(struct sockaddr *)&(client_fd),&size_sock)) == -1) {
+        printf("Error accept(): %s(%d)\n", strerror(errno), errno);
+        return 425;
+    }
 	return 227;
 }
 
@@ -477,7 +481,7 @@ int cmd_port(char* para, session* sess) {
 	
 	//成功，修改目前的数据传输模式
 	sess->current_pasv = 0;
-	reply_custom_msg(sess, 200, "Okay.");
+	reply_custom_msg(sess, 200, "Okay, Received address.");
 	return 200;
 }
 
@@ -500,6 +504,7 @@ int cmd_list(char* para, session* sess) {
 			int temp_code = reply_list(sess, abs_dir);
 			reply_form_msg(sess, temp_code);
 			free(abs_dir);
+			sess->current_pasv = -1;
 			return temp_code;
 		}
 	}
@@ -507,6 +512,7 @@ int cmd_list(char* para, session* sess) {
 		reply_custom_msg(sess, 150, "Begin listing.");
 		int temp_code = reply_list(sess, sess->working_root);
 		reply_form_msg(sess, temp_code);
+		sess->current_pasv = -1;
 		return temp_code;
 	}
 }
@@ -539,6 +545,15 @@ int cmd_retr(char* para, session* sess) {
 
 	int temp_code = retrieve_file(sess, file);
 	reply_form_msg(sess, temp_code);
+	if (temp_code != 226) {
+		close(sess->data_fd);
+		if (sess->current_pasv == 1) {
+			//pasv模式
+			close(sess->pasv_lis_fd);
+		}
+		close(file);
+	}
+	sess->current_pasv = -1;
 	return temp_code;
 	// accepts 226 if the entire file was successfully written to the server's TCP buffers;
 	// rejects 425 if no TCP connection was established;
@@ -574,6 +589,15 @@ int cmd_stor(char* para, session* sess) {
 
 	int temp_code = store_file(sess, file);
 	reply_form_msg(sess, temp_code);
+	if (temp_code != 226) {
+		close(sess->data_fd);
+		if (sess->current_pasv == 1) {
+			//pasv模式
+			close(sess->pasv_lis_fd);
+		}
+		close(file);
+	}
+	sess->current_pasv = -1;
 	return temp_code;
 }
 
@@ -590,18 +614,8 @@ int reply_list(session* sess, char* dir) {
 		}
 	}
 	else{
-		//pasv模式,服务器等待连接
-		if (sess->pasv_lis_fd <= 0) return 425;
-		//printf("开始pasv");
-		struct sockaddr_in client_fd;
-		unsigned int size_sock = sizeof(struct sockaddr_in);
-		if ((sess->data_fd = accept(sess->pasv_lis_fd,
-				(struct sockaddr *)&(client_fd),&size_sock)) == -1) {
-            printf("Error accept(): %s(%d)\n", strerror(errno), errno);
-            return 426;
-        }
-        //printf("Receive data connection from:%s:%hu\n", 
-			//   inet_ntoa(sess->client_addr.sin_addr), ntohs(sess->client_addr.sin_port));
+		//pasv模式,此时连接应该已经建立
+		if (sess->data_fd <= 0) return 425;
     }
 
     //开始处理
@@ -640,13 +654,11 @@ int reply_list(session* sess, char* dir) {
 	send(sess->data_fd, list_res, strlen(list_res), MSG_WAITALL);
 	free(list_res);
 	//传输完成
-	//sleep(0.01);
 	close(sess->data_fd);
 	if (sess->current_pasv == 1) {
 		//pasv模式
 		close(sess->pasv_lis_fd);
 	}
-	sess->current_pasv = -1;
 	return 226;
 }
 
@@ -663,28 +675,36 @@ int retrieve_file(session* sess, int file){
 		}
 	}
 	else{
-		//pasv模式,此时已经存在lis_fd
-		if (sess->pasv_lis_fd <= 0) return 425;
-		struct sockaddr_in client_fd;
-		unsigned int size_sock = sizeof(struct sockaddr_in);
-		if ((sess->data_fd = accept(sess->pasv_lis_fd,
-				(struct sockaddr *)&(client_fd),&size_sock)) == -1) {
-            printf("Error accept(): %s(%d)\n", strerror(errno), errno);
-            return 426;
-        }
+		//pasv模式,此时连接应该已经建立
+		if (sess->data_fd <= 0) return 425;
     }
+
 	struct stat file_stat;
 	fstat(file, &file_stat);
 
 	long long bytes_to_send = file_stat.st_size;
-	// printf("total: %lld", bytes_to_send);
-	while(bytes_to_send) {
-		int temp_size = bytes_to_send > 4096 ? 4096 : bytes_to_send;
-		int sent_size = sendfile(sess->data_fd, file, NULL, temp_size);
-		if (sent_size == -1) return 426;
-		bytes_to_send -= sent_size;
-	}
+	
+	// for linux
+	// while(bytes_to_send) {
+	// 	int temp_size = bytes_to_send > 4096 ? 4096 : bytes_to_send;
+	// 	int sent_size = sendfile(sess->data_fd, file, NULL, temp_size);
+	// 	if (sent_size == -1) return 426;
+	// 	bytes_to_send -= sent_size;
+	// }
 
+	//for macos
+	char* buff = (char*)malloc(4096);
+	while (bytes_to_send) {
+		int temp_size = bytes_to_send > 4096 ? 4096 : bytes_to_send;
+    	int read_size = read(file, buff, temp_size);
+    	if (read_size == -1) return 426;
+    	else if (read_size > 0) {
+    		write(sess->data_fd, buff, read_size);
+    	}
+    	bytes_to_send -= read_size;
+    }
+    
+    free(buff);
 	//传输完成,关闭连接
 	close(sess->data_fd);
 	if (sess->current_pasv == 1) {
@@ -692,7 +712,6 @@ int retrieve_file(session* sess, int file){
 		close(sess->pasv_lis_fd);
 	}
 	close(file);
-	sess->current_pasv = -1;
 	return 226;
 }
 
@@ -711,15 +730,8 @@ int store_file(session* sess, int file) {
 		}
 	}
 	else{
-		//pasv模式,服务器等待连接
-		if (sess->pasv_lis_fd <= 0) return 425;
-		struct sockaddr_in client_fd;
-		unsigned int size_sock = sizeof(struct sockaddr_in);
-		if ((sess->data_fd = accept(sess->pasv_lis_fd,
-				(struct sockaddr *)&(client_fd),&size_sock)) == -1) {
-            printf("Error accept(): %s(%d)\n", strerror(errno), errno);
-            return 426;
-        }
+		//pasv模式,此时连接应该已经建立
+		if (sess->data_fd <= 0) return 425;
     }
 
     //开始接收
@@ -727,10 +739,10 @@ int store_file(session* sess, int file) {
     char* buff = (char*)malloc(4096);
     while (1) {
     	temp_size = read(sess->data_fd, buff, 4096);
-    	if (temp_size) {
-    		write(file, buff, temp_size);
+    	write(file, buff, temp_size);
+    	if (temp_size < 4096) {
+    		break;
     	}
-    	else break;
     	//temp_size = sendfile(file, sess->data_fd, NULL, 4096);
     	// if (!temp_size) break;
     }
@@ -742,6 +754,5 @@ int store_file(session* sess, int file) {
 	}
 	close(file);
 	free(buff);
-	sess->current_pasv = -1;
 	return 226;
 }
