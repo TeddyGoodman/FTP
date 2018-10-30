@@ -361,6 +361,7 @@ int cmd_rnto(char* para, session* sess) {
 	return code;
 }
 
+//data connection relative
 int cmd_pasv(char* para, session* sess) {
 	if (para != NULL) {
 		reply_form_msg(sess, 504);
@@ -373,8 +374,8 @@ int cmd_pasv(char* para, session* sess) {
 	}
 
 	// 如果已经有，则直接关闭
-	if (sess->pasv_lis_fd != 0) close(sess->pasv_lis_fd);
-	if (sess->data_fd != 0) close(sess->data_fd);
+	if (sess->pasv_lis_fd > 0) close(sess->pasv_lis_fd);
+	if (sess->data_fd > 0) close(sess->data_fd);
 
 	//获取本机IP
 	int h1,h2,h3,h4,p1,p2;
@@ -473,6 +474,7 @@ int cmd_port(char* para, session* sess) {
 		return 500;
 	}
 	
+	//成功，修改目前的数据传输模式
 	sess->current_pasv = 0;
 	reply_custom_msg(sess, 200, "Okay.");
 	return 200;
@@ -505,76 +507,6 @@ int cmd_list(char* para, session* sess) {
 		reply_form_msg(sess, temp_code);
 		return temp_code;
 	}
-
-}
-
-int reply_list(session* sess, char* dir) {
-	//未建立任何连接或没有建立data套接字
-	if (sess->current_pasv == -1) return 425;
-	if (sess->data_fd <= 0) return 425;
-
-	if (sess->current_pasv == 0) {
-		//port,服务器发起连接
-		if (connect(sess->data_fd, (struct sockaddr*)&sess->client_addr,
-				sizeof(sess->client_addr)) < 0) {
-			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
-			return 426;
-		}
-	}
-	else{
-		//pasv模式,服务器等待连接
-		unsigned int size_sock = sizeof(struct sockaddr);
-		if ((sess->data_fd = accept(sess->pasv_lis_fd,
-				(struct sockaddr *)&(sess->client_addr),&size_sock)) == -1) {
-            printf("Error accept(): %s(%d)\n", strerror(errno), errno);
-            return 426;
-        }
-    }
-
-    //开始处理
-    char* list_res = (char*)malloc(4096);
-    struct stat dir_stat;
-    DIR *dir_p;
-    struct dirent *dp;
-    int offset = 0;
-
-    offset += sprintf(list_res, "%s", "   name   |   type   |   size   |   modified time\r\n");
-	
-	//获取目录属性失败
-    if (stat(dir, &dir_stat) < 0) return 451;
-
-    if (S_ISREG(dir_stat.st_mode)) {
-    	//是一个普通文件
-    	sprintf(list_res + offset, "%s", file_info(&dir_stat, dir));
-    }
-    //是一个目录
-    else if (S_ISDIR(dir_stat.st_mode)) {
-        dir_p = opendir(dir);
-        while ((dp = readdir(dir_p)) != NULL) {
-            // 忽略 . 和 ..
-            if (strcmp(".", dp->d_name) == 0 ) continue;
-            if (strcmp("..", dp->d_name) == 0 ) continue;
-			
-			char* temp_info;
-			temp_info = file_info(&dir_stat, dp->d_name);
-    		offset += sprintf(list_res + offset, "%s", temp_info);
-			free(temp_info);
-        }
-        closedir(dir_p);
-    }
-    else return 451;
-
-	//printf("list_res: %s", list_res);
-	//printf("%d\n", offset);
-	send(sess->data_fd, list_res, strlen(list_res), MSG_WAITALL);
-	//传输完成
-	//sleep(0.01);
-	close(sess->data_fd);
-	if (sess->current_pasv == 1) {
-		//pasv模式
-		close(sess->pasv_lis_fd);
-	}
-	return 226;
 }
 
 int cmd_retr(char* para, session* sess) {
@@ -643,13 +575,12 @@ int cmd_stor(char* para, session* sess) {
 	return temp_code;
 }
 
-int retrieve_file(session* sess, int file){
+int reply_list(session* sess, char* dir) {
 	//未建立任何连接或没有建立data套接字
 	if (sess->current_pasv == -1) return 425;
-	if (sess->data_fd <= 0) return 425;
-
-	if (sess->current_pasv == 0) {
+	else if (sess->current_pasv == 0) {
 		//port,服务器发起连接
+		if (sess->data_fd <= 0) return 425;
 		if (connect(sess->data_fd, (struct sockaddr*)&sess->client_addr,
 				sizeof(sess->client_addr)) < 0) {
 			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
@@ -658,6 +589,75 @@ int retrieve_file(session* sess, int file){
 	}
 	else{
 		//pasv模式,服务器等待连接
+		if (sess->pasv_lis_fd <= 0) return 425;
+		unsigned int size_sock = sizeof(struct sockaddr);
+		if ((sess->data_fd = accept(sess->pasv_lis_fd,
+				(struct sockaddr *)&(sess->client_addr),&size_sock)) == -1) {
+            printf("Error accept(): %s(%d)\n", strerror(errno), errno);
+            return 426;
+        }
+    }
+
+    //开始处理
+    char* list_res = (char*)malloc(4096);
+    struct stat dir_stat;
+    DIR *dir_p;
+    struct dirent *dp;
+    int offset = 0;
+
+    offset += sprintf(list_res, "%s", "   name   |   type   |   size   |   modified time\r\n");
+	
+	//获取目录属性失败
+    if (stat(dir, &dir_stat) < 0) return 451;
+
+    if (S_ISREG(dir_stat.st_mode)) {
+    	//是一个普通文件
+    	sprintf(list_res + offset, "%s", file_info(&dir_stat, dir));
+    }
+    //是一个目录
+    else if (S_ISDIR(dir_stat.st_mode)) {
+        dir_p = opendir(dir);
+        while ((dp = readdir(dir_p)) != NULL) {
+            // 忽略 . 和 ..
+            if (strcmp(".", dp->d_name) == 0 ) continue;
+            if (strcmp("..", dp->d_name) == 0 ) continue;
+			
+			char* temp_info;
+			temp_info = file_info(&dir_stat, dp->d_name);
+    		offset += sprintf(list_res + offset, "%s", temp_info);
+			free(temp_info);
+        }
+        closedir(dir_p);
+    }
+    else return 451;
+
+	send(sess->data_fd, list_res, strlen(list_res), MSG_WAITALL);
+	//传输完成
+	//sleep(0.01);
+	close(sess->data_fd);
+	if (sess->current_pasv == 1) {
+		//pasv模式
+		close(sess->pasv_lis_fd);
+	}
+	sess->current_pasv = -1;
+	return 226;
+}
+
+int retrieve_file(session* sess, int file){
+	//未建立任何连接或没有建立data套接字
+	if (sess->current_pasv == -1) return 425;
+	else if (sess->current_pasv == 0) {
+		//port,模式,服务器发起连接,此时已经存在data_fd
+		if (sess->data_fd <= 0) return 425;
+		if (connect(sess->data_fd, (struct sockaddr*)&sess->client_addr,
+				sizeof(sess->client_addr)) < 0) {
+			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
+			return 426;
+		}
+	}
+	else{
+		//pasv模式,此时已经存在lis_fd
+		if (sess->pasv_lis_fd <= 0) return 425;
 		unsigned int size_sock = sizeof(struct sockaddr);
 		if ((sess->data_fd = accept(sess->pasv_lis_fd,
 				(struct sockaddr *)&(sess->client_addr),&size_sock)) == -1) {
@@ -678,14 +678,14 @@ int retrieve_file(session* sess, int file){
 		bytes_to_send -= sent_size;
 	}
 
-	//传输完成
+	//传输完成,关闭连接
 	close(sess->data_fd);
 	if (sess->current_pasv == 1) {
 		//pasv模式
 		close(sess->pasv_lis_fd);
 	}
 	close(file);
-	// printf("closed");
+	sess->current_pasv = -1;
 	return 226;
 }
 
@@ -693,10 +693,10 @@ int store_file(session* sess, int file) {
 
 	//未建立任何连接或没有建立data套接字
 	if (sess->current_pasv == -1) return 425;
-	if (sess->data_fd <= 0) return 425;
 
-	if (sess->current_pasv == 0) {
+	else if (sess->current_pasv == 0) {
 		//port,服务器发起连接
+		if (sess->data_fd <= 0) return 425;
 		if (connect(sess->data_fd, (struct sockaddr*)&sess->client_addr,
 				sizeof(sess->client_addr)) < 0) {
 			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
@@ -705,6 +705,7 @@ int store_file(session* sess, int file) {
 	}
 	else{
 		//pasv模式,服务器等待连接
+		if (sess->pasv_lis_fd <= 0) return 425;
 		unsigned int size_sock = sizeof(struct sockaddr);
 		if ((sess->data_fd = accept(sess->pasv_lis_fd,
 				(struct sockaddr *)&(sess->client_addr),&size_sock)) == -1) {
@@ -726,5 +727,6 @@ int store_file(session* sess, int file) {
 		close(sess->pasv_lis_fd);
 	}
 	close(file);
+	sess->current_pasv = -1;
 	return 226;
 }
