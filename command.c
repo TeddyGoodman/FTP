@@ -113,7 +113,10 @@ int cmd_type(char* para, session* sess) {
 	}
 
 	//可能需要定制消息
-	if (strcmp(para, "I") == 0) return 200;
+	if (strcmp(para, "I") == 0) {
+		reply_custom_msg(sess, 200, "Type set to I.");
+		return 200;
+	}
 	else {
 		reply_form_msg(sess, 501);
 		return 501;

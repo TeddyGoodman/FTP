@@ -1,10 +1,10 @@
-all: server.out client.out
+all: server client
 
 clean:
-	rm server.out client.out
+	rm server client
 
-server.out: server.c utility.c command.c session.c
-	gcc -o server.out -Wall -pthread server.c utility.c command.c session.c
+server: server.c utility.c command.c session.c
+	gcc -o server -Wall -pthread server.c utility.c command.c session.c
 
-client.out: client.c
-	gcc -o client.out -Wall client.c
+client: client.c
+	gcc -o client -Wall client.c

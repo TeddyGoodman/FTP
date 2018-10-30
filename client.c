@@ -187,12 +187,21 @@ int main(int argc, char **argv) {
 
 		if (strcmp(cmd, "PASV") == 0) {
 			cmd_pasv(sentence);
+			int m = recv(sockfd, sentence, 8192, 0);
+			sentence[m] = '\0';
+			printf("FROM SERVER: %s", sentence);
 		}
 		else if (strcmp(cmd, "LIST") == 0) {
 			cmd_retr();
+			int m = recv(sockfd, sentence, 8192, 0);
+			sentence[m] = '\0';
+			printf("FROM SERVER: %s", sentence);
 		}
 		else if (strcmp(cmd, "RETR") == 0) {
 			cmd_retr();
+			int m = recv(sockfd, sentence, 8192, 0);
+			sentence[m] = '\0';
+			printf("FROM SERVER: %s", sentence);
 		}
 
 		if (sscanf(sentence, "%d", &code) != 0)
