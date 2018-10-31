@@ -369,8 +369,14 @@ int cmd_pasv(char* para, session* sess) {
 	}
 
 	// 如果已经有，则直接关闭
-	if (sess->pasv_lis_fd > 0) close(sess->pasv_lis_fd);
-	if (sess->data_fd > 0) close(sess->data_fd);
+	if (sess->pasv_lis_fd > 0) {
+		close(sess->pasv_lis_fd);
+		sess->pasv_lis_fd = 0;
+	}
+	if (sess->data_fd > 0){
+		close(sess->data_fd);
+		sess->data_fd = 0;
+	}
 
 	//获取本机IP
 	int h1,h2,h3,h4,p1,p2;
@@ -458,7 +464,10 @@ int cmd_port(char* para, session* sess) {
 
 	char ip_str[128];
 	//已经有socket，则断开连接
-	if (sess->data_fd > 0) close(sess->data_fd);
+	if (sess->data_fd > 0){
+		close(sess->data_fd);
+		sess->data_fd = 0;
+	}
 	//创建socket
 	if ((sess->data_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
 		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
@@ -490,6 +499,7 @@ int cmd_list(char* para, session* sess) {
 	if (sess->login_status == unlogged ||
 		sess->login_status == need_pass) {
 		reply_form_msg(sess, 530);
+		sess->current_pasv = -1;
 		return 530;
 	}
 	
@@ -497,6 +507,7 @@ int cmd_list(char* para, session* sess) {
 		char* abs_dir = get_absolute_dir(sess->working_root, para, 1);
 		if (abs_dir == NULL) {
 			reply_custom_msg(sess, 451, "failed, uncorrect pathname.");
+			sess->current_pasv = -1;
 			return 451;
 		}
 		else {
@@ -520,11 +531,13 @@ int cmd_list(char* para, session* sess) {
 int cmd_retr(char* para, session* sess) {
 	if (para == NULL) {
 		reply_form_msg(sess, 504);
+		sess->current_pasv = -1;
 		return 504;
 	}
 	if (sess->login_status == unlogged ||
 		sess->login_status == need_pass) {
 		reply_form_msg(sess, 530);
+		sess->current_pasv = -1;
 		return 530;
 	}
 
@@ -533,6 +546,7 @@ int cmd_retr(char* para, session* sess) {
 	char* abs_dir = get_absolute_dir(sess->working_root, para, 1);
 	if (abs_dir == NULL) {
 		reply_custom_msg(sess, 451, "failed, file not exist.");
+		sess->current_pasv = -1;
 		return 451;
 	}
 
@@ -540,6 +554,7 @@ int cmd_retr(char* para, session* sess) {
 	if (file == -1) {
 		// 没有权限
 		reply_custom_msg(sess, 451, "failed, no permission.");
+		sess->current_pasv = -1;
 		return 451;
 	}
 
@@ -547,9 +562,11 @@ int cmd_retr(char* para, session* sess) {
 	reply_form_msg(sess, temp_code);
 	if (temp_code != 226) {
 		close(sess->data_fd);
+		sess->data_fd = 0;
 		if (sess->current_pasv == 1) {
 			//pasv模式
 			close(sess->pasv_lis_fd);
+			sess->pasv_lis_fd = 0;
 		}
 		close(file);
 	}
@@ -564,24 +581,29 @@ int cmd_retr(char* para, session* sess) {
 int cmd_stor(char* para, session* sess) {
 	if (para == NULL) {
 		reply_form_msg(sess, 504);
+		sess->current_pasv = -1;
 		return 504;
 	}
 	if (sess->login_status == unlogged ||
 		sess->login_status == need_pass) {
 		reply_form_msg(sess, 530);
+		sess->current_pasv = -1;
 		return 530;
 	}
 
 	char* abs_dir = get_absolute_dir(sess->working_root, para, -1);
 	if (abs_dir == NULL) {
 		reply_custom_msg(sess, 451, "failed, uncorrect pathname.");
+		sess->current_pasv = -1;
 		return 451;
 	}
 
-	int file = open(abs_dir, O_WRONLY | O_CREAT | O_TRUNC);
+	int file = open(abs_dir, O_WRONLY | O_CREAT | O_TRUNC, 
+		S_IRWXU | S_IXGRP | S_IROTH | S_IXOTH | S_IRGRP);
 	if (file == -1) {
 		// 没有权限
 		reply_custom_msg(sess, 451, "failed, no permission.");
+		sess->current_pasv = -1;
 		return 451;
 	}
 
@@ -591,9 +613,11 @@ int cmd_stor(char* para, session* sess) {
 	reply_form_msg(sess, temp_code);
 	if (temp_code != 226) {
 		close(sess->data_fd);
+		sess->data_fd = 0;
 		if (sess->current_pasv == 1) {
 			//pasv模式
 			close(sess->pasv_lis_fd);
+			sess->pasv_lis_fd = 0;
 		}
 		close(file);
 	}
@@ -655,9 +679,11 @@ int reply_list(session* sess, char* dir) {
 	free(list_res);
 	//传输完成
 	close(sess->data_fd);
+	sess->data_fd = 0;
 	if (sess->current_pasv == 1) {
 		//pasv模式
 		close(sess->pasv_lis_fd);
+		sess->pasv_lis_fd = 0;
 	}
 	return 226;
 }
@@ -707,9 +733,11 @@ int retrieve_file(session* sess, int file){
     free(buff);
 	//传输完成,关闭连接
 	close(sess->data_fd);
+	sess->data_fd = 0;
 	if (sess->current_pasv == 1) {
 		//pasv模式
 		close(sess->pasv_lis_fd);
+		sess->pasv_lis_fd = 0;
 	}
 	close(file);
 	return 226;
@@ -740,17 +768,20 @@ int store_file(session* sess, int file) {
     while (1) {
     	temp_size = read(sess->data_fd, buff, 4096);
     	write(file, buff, temp_size);
-    	if (temp_size < 4096) {
-    		break;
-    	}
+    	if (temp_size == 0) break;
+    	// if (temp_size < 4096) {
+    	// 	break;
+    	// }
     	//temp_size = sendfile(file, sess->data_fd, NULL, 4096);
     	// if (!temp_size) break;
     }
 	//传输完成
 	close(sess->data_fd);
+	sess->data_fd = 0;
 	if (sess->current_pasv == 1) {
 		//pasv模式
 		close(sess->pasv_lis_fd);
+		sess->pasv_lis_fd = 0;
 	}
 	close(file);
 	free(buff);

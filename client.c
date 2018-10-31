@@ -18,6 +18,10 @@
 #include "client.h"
 #include "utility.h"
 
+/*
+* 在
+*
+*/
 int port_connect_data() {
 	//port模式
 	struct sockaddr_in client_fd;
@@ -75,7 +79,10 @@ int cmd_port(char* para){
 	}
 	struct sockaddr_in addr;//临时设置的地址，为bind准备
 
-	if (data_lis_port > 0) close(data_lis_port);
+	if (data_lis_port > 0){
+		close(data_lis_port);
+		data_lis_port = 0;
+	}
 
 	//创建socket
 	if ((data_lis_port = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
@@ -142,7 +149,10 @@ int cmd_pasv(char* sentence) {
 	sscanf(sentence + i, "%d,%d,%d,%d,%d,%d", &h1, &h2, &h3, &h4, &p1, &p2);
 	
 	//创建socket
-	if (data_fd > 0) close(data_fd);
+	if (data_fd > 0) {
+		close(data_fd);
+		data_fd = 0;
+	}
 
 	if ((data_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
 		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
@@ -182,15 +192,19 @@ void download_file(int file) {
     while (1) {
     	temp_size = read(data_fd, buff, 4096);
     	write(file, buff, temp_size);
-    	if (temp_size < 4096) {
-    		break;
-    	}
+    	if (temp_size == 0) break;
+    	// else break;
+    	// if (temp_size < 4096) {
+    	// 	break;
+    	// }
     }
 	//传输完成
 	close(data_fd);
+	data_fd = 0;
 	if (is_pasv == 0) {
 		//port模式
 		close(data_lis_port);
+		data_lis_port = 0;
 	}
 	close(file);
 	free(buff);
@@ -227,9 +241,11 @@ void upload_file(int file) {
 
 	//传输完成,关闭连接
 	close(data_fd);
+	data_fd = 0;
 	if (is_pasv == 0) {
 		//pasv模式
 		close(data_lis_port);
+		data_lis_port = 0;
 	}
 	close(file);
 	return;
@@ -239,17 +255,21 @@ void* show_list() {
 	char* buff = (char*)malloc(4096);
 	while (1) {
 		int size = read(data_fd, buff, 4096);
-		printf("%s", buff);
 		if (size < 4096){
+			buff[size] = '\0';
+			printf("%s", buff);
 			break;
 		}
+		else printf("%s\n", buff);
 	}
 	free(buff);
 
 	close(data_fd);
+	data_fd = 0;
 	if (is_pasv == 0) {
 		//pasv模式
 		close(data_lis_port);
+		data_lis_port = 0;
 	}
 
 	return NULL;
@@ -279,7 +299,12 @@ int cmd_retr(char* sentence, char* para) {
 
 	//打开文件
 	char* file_root = get_absolute_dir(root_directory, para, -1);
-	int file = open(file_root, O_WRONLY | O_CREAT | O_TRUNC);
+	int file = open(file_root, O_WRONLY | O_CREAT | O_TRUNC,
+		S_IRWXU | S_IXGRP | S_IROTH | S_IXOTH | S_IRGRP);
+	if (file == -1) {
+		printf("No such file\n");
+		return 1;
+	}
 	free(file_root);
 
 	//开始下载
@@ -298,9 +323,11 @@ int cmd_retr(char* sentence, char* para) {
 	else {
 		pthread_cancel(thid);
 		close(data_fd);
+		data_fd = 0;
 		if (is_pasv == 0) {
 			//pasv模式
 			close(data_lis_port);
+			data_lis_port = 0;
 		}
 		close(file);
 	}
@@ -334,9 +361,11 @@ int cmd_stor(char* sentence, char* para) {
 
 	if (file <= 0) {
 		close(data_fd);
+		data_fd = 0;
 		if (is_pasv == 0) {
 			//pasv模式
 			close(data_lis_port);
+			data_lis_port = 0;
 		}
 		close(file);
 	}
@@ -357,9 +386,11 @@ int cmd_stor(char* sentence, char* para) {
 	else {
 		pthread_cancel(thid);
 		close(data_fd);
+		data_fd = 0;
 		if (is_pasv == 0) {
 			//pasv模式
 			close(data_lis_port);
+			data_lis_port = 0;
 		}
 		close(file);
 	}
@@ -397,9 +428,11 @@ int cmd_list(char* sentence) {
 	else {
 		pthread_cancel(thid);
 		close(data_fd);
+		data_fd = 0;
 		if (is_pasv == 0) {
 			//pasv模式
 			close(data_lis_port);
+			data_lis_port = 0;
 		}
 	}
 	is_pasv = -1;
@@ -465,7 +498,6 @@ int main(int argc, char **argv) {
 			printf("FROM SERVER: %s", sentence);
 
 			if (cmd_retr(sentence, para)) {
-
 				int m = recv(control_fd, sentence, 8192, 0);
 				sentence[m] = '\0';
 				printf("FROM SERVER: %s", sentence);
@@ -479,8 +511,7 @@ int main(int argc, char **argv) {
 			sentence[m] = '\0';
 			printf("FROM SERVER: %s", sentence);
 
-			if (cmd_stor(sentence, para)) {
-				
+			if (cmd_stor(sentence, para))  {
 				int m = recv(control_fd, sentence, 8192, 0);
 				sentence[m] = '\0';
 				printf("FROM SERVER: %s", sentence);
