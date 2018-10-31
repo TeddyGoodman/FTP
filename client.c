@@ -487,6 +487,10 @@ int main(int argc, char **argv) {
 		//获取键盘输入
 		fgets(sentence, 4096, stdin);
 		len = strlen(sentence);
+		if (len < 2) {
+			printf("no input given.\n");
+			continue;
+		}
 		sentence[len - 1] = '\r';
 		sentence[len] = '\n';
 		sentence[len + 1] = '\0';
