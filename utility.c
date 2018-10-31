@@ -16,6 +16,9 @@
 #include <unistd.h>
 #include <time.h>
 
+/*
+* 去除一个字符串后面的\r\n
+*/
 void remove_enter(char* str) {
 	int i = 0;
 	while (1){
@@ -28,7 +31,9 @@ void remove_enter(char* str) {
 	}
 }
 
-//删除某个目录，0代表成功，-1代表失败
+/*
+* 删除某个目录，0代表成功，-1代表失败
+*/
 int remove_dir(char* dir) {
 
     char current_dir[] = ".";
@@ -71,8 +76,10 @@ int remove_dir(char* dir) {
     else return -1;
 }
 
-//通过prefix和输入参数获取绝对路径，文件或目录存在返回绝对路径，否则返回NULL
-//第三个参数: 0->目录，1->文件，-1->只做组合路径
+/*
+* 通过prefix和输入参数获取绝对路径，文件或目录存在返回绝对路径，否则返回NULL
+* 第三个参数: 0->目录，1->文件，-1->只做组合路径
+*/
 char* get_absolute_dir(char* name_prefix, char* parameter, int is_file) {
 	int len = strlen(name_prefix);
 	char* temp_dir = (char*)malloc(256);
@@ -110,6 +117,9 @@ char* get_absolute_dir(char* name_prefix, char* parameter, int is_file) {
     }
 }
 
+/*
+* 获取文件信息
+*/
 char* file_info(struct stat *dir_stat, char* file_name){
     char* info = (char*)malloc(256);
     int offset = 0;

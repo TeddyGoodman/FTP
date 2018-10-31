@@ -16,6 +16,9 @@
 #include "command.h"
 #include "session.h"
 
+/*
+* 初始化server
+*/
 int server_init() {
     srand((unsigned int)time(NULL));
     struct sockaddr_in addr;
@@ -117,11 +120,17 @@ int main(int argc, char const *argv[])
     return 0;
 }
 
+/*
+* 多线程接口
+*/
 void* serve_client_pthread(void* ptr) {
     serve_client(*(int*)ptr);
     return NULL;
 }
 
+/*
+* 服务客户端函数
+*/
 void serve_client(int client_fd) {
     session client_sess;
     init_session(&client_sess, client_fd, file_root);
@@ -187,7 +196,9 @@ void serve_client(int client_fd) {
     return;
 }
 
-
+/*
+* 分发command
+*/
 int dispatch_cmd(char* cmd, char* para, session* sess) {
     int code;
 

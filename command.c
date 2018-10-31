@@ -51,7 +51,6 @@ int cmd_user(char* para, session* sess) {
 
 }
 
-// TODO: check the password
 int cmd_pass(char* para, session* sess) {
 	if (para == NULL) {
 		reply_form_msg(sess, 504);
@@ -157,7 +156,7 @@ int cmd_pwd(char* para, session* sess) {
 	return 257;
 }
 
-//路径方面的问题：encoded需不需要想法处理
+//路径方面的问题：encoded和空格等需不需要想法处理
 int cmd_cwd(char* para, session* sess) {
 	if (para == NULL) {
 		reply_form_msg(sess, 504);
@@ -356,7 +355,9 @@ int cmd_rnto(char* para, session* sess) {
 	return code;
 }
 
-//data connection relative
+/*
+* 数据传输端口相关的函数
+*/
 int cmd_pasv(char* para, session* sess) {
 	if (para != NULL) {
 		reply_form_msg(sess, 504);
@@ -625,6 +626,9 @@ int cmd_stor(char* para, session* sess) {
 	return temp_code;
 }
 
+/*
+* 回复list请求
+*/
 int reply_list(session* sess, char* dir) {
 	//未建立任何连接或没有建立data套接字
 	if (sess->current_pasv == -1) return 425;
@@ -688,6 +692,9 @@ int reply_list(session* sess, char* dir) {
 	return 226;
 }
 
+/*
+* retr，下载文件，服务器端上传
+*/
 int retrieve_file(session* sess, int file){
 	//未建立任何连接或没有建立data套接字
 	if (sess->current_pasv == -1) return 425;
@@ -743,6 +750,9 @@ int retrieve_file(session* sess, int file){
 	return 226;
 }
 
+/*
+* stor，上传文件，服务器端下载
+*/
 int store_file(session* sess, int file) {
 
 	//未建立任何连接或没有建立data套接字

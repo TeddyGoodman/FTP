@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*
+* 初始化会话
+*/
 int init_session(session* sess, int client_fd, char* global_file_root) {
 	sess->sentence = (char*)malloc(8192);
 	sess->working_root = (char*)malloc(512);
@@ -23,6 +26,9 @@ int init_session(session* sess, int client_fd, char* global_file_root) {
 	return 0;
 }
 
+/*
+* 关闭会话
+*/
 int close_session(session* sess) {
 	free(sess->sentence);
 	free(sess->working_root);
@@ -38,7 +44,9 @@ void reply_custom_msg(session* sess, int code, char* str) {
 	return;
 }
 
-
+/*
+* 回复固定式的消息，有些code的消息类似，返回一样的即可
+*/
 void reply_form_msg(session* sess, int code) {
     switch (code) {
         case 500:

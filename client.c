@@ -19,8 +19,7 @@
 #include "utility.h"
 
 /*
-* 在
-*
+* 在port模式下接受连接
 */
 int port_connect_data() {
 	//port模式
@@ -33,6 +32,9 @@ int port_connect_data() {
 	return 0;
 }
 
+/*
+* 在pasv模式下开始连接
+*/
 int pasv_connect_data() {
 	if (connect(data_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
 		printf("Error connect(): %s(%d)\n", strerror(errno), errno);
@@ -41,6 +43,9 @@ int pasv_connect_data() {
 	return 0;
 }
 
+/*
+* 初始化客户端
+*/
 int client_init() {
 	struct sockaddr_in addr;
 
@@ -54,7 +59,8 @@ int client_init() {
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(control_port);
-	if (inet_pton(AF_INET, server_ip, &addr.sin_addr) <= 0) {			//转换ip地址:点分十进制-->二进制
+	//转换ip地址:点分十进制-->二进制
+	if (inet_pton(AF_INET, server_ip, &addr.sin_addr) <= 0) {
 		printf("Error inet_pton(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
@@ -175,16 +181,25 @@ int cmd_pasv(char* sentence) {
 	return 0;
 }
 
+/*
+* 用于多线程接口
+*/
 void* download_file_pthread(void* ptr) {
 	download_file(*(int*)ptr);
 	return NULL;
 }
 
+/*
+* 用于多线程
+*/
 void* upload_file_pthread(void *ptr) {
 	upload_file(*(int*)ptr);
 	return NULL;
 }
 
+/*
+* 下载文件
+*/
 void download_file(int file) {
     //开始接收
     int temp_size;
@@ -193,7 +208,7 @@ void download_file(int file) {
     	temp_size = read(data_fd, buff, 4096);
     	write(file, buff, temp_size);
     	if (temp_size == 0) break;
-    	// else break;
+    	
     	// if (temp_size < 4096) {
     	// 	break;
     	// }
@@ -211,6 +226,9 @@ void download_file(int file) {
 	return;
 }
 
+/*
+* 上传文件函数
+*/
 void upload_file(int file) {
 
 	struct stat file_stat;
@@ -251,6 +269,9 @@ void upload_file(int file) {
 	return;
 }
 
+/*
+* 显示list函数，多线程，传输给端口
+*/
 void* show_list() {
 	char* buff = (char*)malloc(4096);
 	while (1) {
@@ -310,7 +331,6 @@ int cmd_retr(char* sentence, char* para) {
 	//开始下载
 	pthread_t thid;
 	pthread_create(&thid, NULL, (void*)download_file_pthread, (void*)&file);
-	//pthread_detach(thid);
 
 	int m = recv(control_fd, sentence, 8192, 0);
 	sentence[m] = '\0';
@@ -335,6 +355,9 @@ int cmd_retr(char* sentence, char* para) {
 	return 0;
 }
 
+/*
+* stor指令，和retr相似
+*/
 int cmd_stor(char* sentence, char* para) {
 
 	int ret_code;
@@ -373,7 +396,6 @@ int cmd_stor(char* sentence, char* para) {
 	//开始上传
 	pthread_t thid;
 	pthread_create(&thid, NULL, (void*)upload_file_pthread, (void*)&file);
-	//pthread_detach(thid);
 
 	int m = recv(control_fd, sentence, 8192, 0);
 	sentence[m] = '\0';
@@ -398,6 +420,9 @@ int cmd_stor(char* sentence, char* para) {
 	return 0;
 }
 
+/*
+* list指令的主控制
+*/
 int cmd_list(char* sentence) {
 	int ret_code;
 	if (sscanf(sentence, "%d", &ret_code) != 1) return 1;
