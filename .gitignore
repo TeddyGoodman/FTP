@@ -63,3 +63,10 @@ dkms.conf
 # test data
 *.data
 
+# python
+__pycache__/
+*/__pycache__/
+
+# vscode
+.vscode/
+*/.vscode/
