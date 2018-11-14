@@ -4,9 +4,10 @@
 import sys
 from PyQt5.QtWidgets import QApplication
 import widget
+from client_core import *
         
 if __name__ == '__main__':
-    
-    app = QApplication(sys.argv)
-    ex = widget.ClientMain()
-    sys.exit(app.exec_())
+    a = ClientSession('/User')
+    # app = QApplication(sys.argv)
+    # ex = widget.ClientMain()
+    # sys.exit(app.exec_())
