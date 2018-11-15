@@ -23,8 +23,16 @@ class InternalError(BaseError):
 
 def connect_required(func):
     def wrapper(self, *args, **kwargs):
-        if self.status == this.STATUS_OFFLINE:
+        if self.status == self.STATUS_OFFLINE or self.control_sock is None:
             raise LogicError('not connect yet')
+        else:
+            return func(self, *args, **kwargs)
+    return wrapper
+
+def offline_required(func):
+    def wrapper(self, *args, **kwargs):
+        if self.status != self.STATUS_OFFLINE and self.control_sock is None:
+            raise LogicError('do disconnect first')
         else:
             return func(self, *args, **kwargs)
     return wrapper
