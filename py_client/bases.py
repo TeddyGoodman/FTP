@@ -31,8 +31,9 @@ def connect_required(func):
 
 def offline_required(func):
     def wrapper(self, *args, **kwargs):
-        if self.status != self.STATUS_OFFLINE and self.control_sock is None:
+        if self.status != self.STATUS_OFFLINE or self.control_sock is not None:
             raise LogicError('do disconnect first')
         else:
             return func(self, *args, **kwargs)
     return wrapper
+

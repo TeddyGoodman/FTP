@@ -2,6 +2,7 @@
 
 import os
 import re
+from bases import LogicError, InternalError
 
 def is_address(ip, port):
     assert type(ip) == str, 'input ip not a string'
@@ -13,3 +14,21 @@ def is_address(ip, port):
     if port < 0 or port > 65535:
         return False
     return True
+
+def parse_file_info(file_str):
+    '''
+    解析形如
+    -rw-r--r--    1 1000     121       5689110 Oct 31 13:54 bbb.pdf
+    格式的字符串
+    '''
+    ls = file_str.split()
+    assert len(ls) >= 2, 'Input file string wrong'
+    # print(ls)
+    info = {}
+    if ls[0][0] == 'd':
+        info['type'] = 1
+    else:
+        info['type'] = 0
+    
+    info['name'] = ls[-1]
+    return info

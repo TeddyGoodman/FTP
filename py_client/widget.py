@@ -1,10 +1,30 @@
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
+from client_core import ClientSession
+import os
+from bases import LogicError, InternalError
+import utility
+
+def qt_front_wrapper(func):
+    def wrapper(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        except LogicError as e:
+            QMessageBox.information(self, 'Failed', 'Action Failed:' + str(e), 
+                QMessageBox.Yes, QMessageBox.Yes)
+        except InternalError as e:
+            QMessageBox.information(self, 'Error', 'Meet with Internal Error: ' + str(e), 
+                QMessageBox.Yes, QMessageBox.Yes)
+        except Exception as e:
+            QMessageBox.information(self, 'Error', 'Meet with Base Error: ' + str(e), 
+                QMessageBox.Yes, QMessageBox.Yes)
+    return wrapper
 
 class ClientMain(QWidget):
     def __init__(self):
         super().__init__()
+        self.session = ClientSession(root=os.getcwd(), outer_show=self.show_command)
         self.initUI()
     
     def center(self):
@@ -12,6 +32,9 @@ class ClientMain(QWidget):
         cp = QDesktopWidget().availableGeometry().center()
         qr.moveCenter(cp)
         self.move(qr.topLeft())
+
+    def show_command(self, msg):
+        self.cmd_prompt_browser.append(msg.rstrip('\r\n'))
 
     def connect_login_ui(self):
         self.ip = QLabel('IP/Domain')
@@ -24,6 +47,10 @@ class ClientMain(QWidget):
         self.userEdit = QLineEdit()
         self.passwordEdit = QLineEdit()
 
+        self.portEdit.setValidator(QIntValidator(0, 65535))
+        self.passwordEdit.setContextMenuPolicy(Qt.NoContextMenu)
+        self.passwordEdit.setEchoMode(QLineEdit.Password)
+
         self.connect_btn = QPushButton('Connect')
         self.login_btn = QPushButton('Login')
         return
@@ -35,7 +62,8 @@ class ClientMain(QWidget):
         self.local_files = QLabel('Local Files')
         self.cloud_files = QLabel('Cloud Files')
         self.local_files_browser = QTextBrowser()
-        self.cloud_files_browser = QTextBrowser()
+        self.cloud_files_browser = QListWidget()
+        # self.cloud_files_browser.setFont(QFont('SansSerif', 13))
 
         self.downloading = QLabel('Downloading')
         self.downloading_browser = QLineEdit()
@@ -83,8 +111,16 @@ class ClientMain(QWidget):
         self.center()
         self.setWindowTitle('FTP Client')
         # self.setWindowIcon(QIcon('web.png'))
+
+        # connect events
+        self.connect_btn.clicked.connect(self.connect_server)
+        self.login_btn.clicked.connect(self.server_login)
     
         self.show()
+    
+    def clear_ui(self):
+        self.cmd_prompt_browser.clear()
+        self.cloud_files_browser.clear()
     
     def closeEvent(self, event):
         reply = QMessageBox.question(self, 'Message', 'Are you sure to quit?',
@@ -92,6 +128,44 @@ class ClientMain(QWidget):
         
         if reply == QMessageBox.Yes:
             event.accept()
+            if self.session.status != self.session.STATUS_OFFLINE:
+                self.session.disconnect()
         else:
             event.ignore()
-        
+    
+    @qt_front_wrapper
+    def connect_server(self, *args, **kwargs):
+        if self.session.status == self.session.STATUS_OFFLINE:
+            ip = self.ipEdit.text()
+            port = self.portEdit.text()
+            if self.ipEdit.text() == '' or self.portEdit.text() == '':
+                raise LogicError('Please input correct ip and port')
+            self.session.connect(ip, int(port))
+            QMessageBox.information(self, 'Successful', 'you have connected', 
+                QMessageBox.Yes, QMessageBox.Yes)
+            self.connect_btn.setText('disconnect')
+        else:
+            self.session.disconnect()
+            self.clear_ui()
+            QMessageBox.information(self, 'Successful', 'you have disconnected', 
+                QMessageBox.Yes, QMessageBox.Yes)
+            self.connect_btn.setText('connect')
+
+    @qt_front_wrapper
+    def server_login(self, *args, **kwargs):
+        name = self.userEdit.text()
+        password = self.passwordEdit.text()
+        self.session.login(name, password) # 登录
+        self.session.get_server_root() # 获取根目录
+        files_str = self.session.listServerFile() # 获取目录下所有文件
+
+        # 解析目录下的文件
+        files = files_str.splitlines()
+        for line in files:
+            info = utility.parse_file_info(line)
+            if info['type'] == 1:
+                self.cloud_files_browser.addItem(info['name'] + '/')
+            else:
+                self.cloud_files_browser.addItem(info['name'])
+        return
+        # print(files)
