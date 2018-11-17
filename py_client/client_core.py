@@ -1,31 +1,42 @@
 # -*- coding: utf-8 -*-
 import socket
 import re, os
-from bases import InternalError, LogicError, connect_required, offline_required
+from bases import InternalError, LogicError, connect_required, offline_required, login_required
 import utility
 
 class ClientSession:
+    # 回话状态
     STATUS_OFFLINE = -1
     STATUS_CONNECT = 0
     STATUS_LOGGED = 1
 
+    # 传输模式
     MODE_PASV = 1
     MODE_PORT = 0
 
     BUFF_SIZE = 4096
 
     def __init__(self, root='/tmp', outer_show=None):
-        self.status = self.STATUS_OFFLINE
-        self.server_ip = ''
-        self.server_port = 0
+
+        # local relative
+        if not os.path.isdir(root):
+            raise InternalError('input not a path')
         self.root_directory = root
+
+        # connect relative
+        self.status = self.STATUS_OFFLINE
         self.trans_mode = self.MODE_PASV
         self.control_sock = None
         self.data_sock = None
-        self.control_port = 0
-        self.outer_show = outer_show
-        if self.outer_show is not None and not callable(self.outer_show):
+        if outer_show is not None and not callable(outer_show):
             raise InternalError('function given to Session not callable')
+        self.outer_show = outer_show
+
+        # server relative
+        self.server_ip = ''
+        self.server_port = 0
+        self.server_root = ''
+        self.server_current_dir = ''
 
     def get_res_code(self, res):
         assert type(res) == str, 'input res not string'
@@ -61,12 +72,14 @@ class ClientSession:
         else:
             print('[ERROR]: ' + msg)
 
-    @connect_required
+    # ----------- command implement --------------
+
+    @login_required
     def data_port(self):
         raise NotImplementedError('not done yet')
 
     # 如果成功，将在self.data_sock创建连接，否则抛出一场
-    @connect_required
+    @login_required
     def data_pasv(self):
         self.send_msg('PASV')
         res = self.expect_respond()
@@ -140,6 +153,10 @@ class ClientSession:
             res = self.expect_respond()
             code = self.get_res_code(res)
             if code == 230:
+                self.status = self.STATUS_LOGGED
+                # 获取一下目录
+                self.get_server_current_root()
+                self.server_root = self.server_current_dir
                 return
             elif code == 202:
                 raise LogicError('permission already granted')
@@ -150,8 +167,16 @@ class ClientSession:
         else:
             raise LogicError('server denied the input user name')
     
-    @connect_required
-    def get_server_root(self):
+    '''
+    --------------- 路径相关 --------------------
+    '''
+    @login_required
+    def in_server_root(self):
+        return self.server_current_dir == self.server_root
+
+    @login_required
+    def get_server_current_root(self):
+        # PWD 命令，获取server_current_dir
         self.send_msg('PWD')
         res = self.expect_respond()
         code = self.get_res_code(res)
@@ -161,12 +186,39 @@ class ClientSession:
         match_ans = dir_re.match(res)
         assert match_ans is not None, 'matching result is none'
         assert len(match_ans.groups()) == 1, 'match result is wrong: ' + str(match_ans)
-        self.server_root = match_ans.groups()[0]
-        self.console_log(0, 'server\'s root dir is: ' + self.server_root)
+        self.server_current_dir = match_ans.groups()[0]
+        self.console_log(0, 'server\'s root dir is: ' + self.server_current_dir)
         return
 
-    @connect_required
-    def listServerFile(self):
+    @login_required
+    def change_server_current_root(self, target_dir):
+        # CWD命令，获取server_current_dir
+        assert type(target_dir) == str and target_dir != '', 'given target dir wrong'
+        # 可能要返回上级目录
+        if target_dir == '..':
+            if self.in_server_root():
+                raise InternalError('should not have parent dir here')
+            pare, child = os.path.split(self.server_current_dir)
+            if child == '':
+                raise InternalError('child path is none')
+            self.send_msg('CWD ' + pare)
+        else:
+            self.send_msg('CWD ' + target_dir)
+
+        res = self.expect_respond()
+        code = self.get_res_code(res)
+        if code not in [200, 250]:
+            raise InternalError('Server rejected CWD')
+
+        # 修改目录
+        if target_dir == '..':
+            self.server_current_dir = pare
+        else:
+            self.server_current_dir = os.path.join(self.server_current_dir, target_dir)
+        self.console_log(0, 'server\'s root dir changed to: ' + self.server_current_dir)
+
+    @login_required
+    def list_server_file(self):
         if self.trans_mode == self.MODE_PORT:
             self.data_port()
         else:
@@ -185,7 +237,50 @@ class ClientSession:
                 result += data.decode()
                 break
             result += data.decode()
+        
+        # 接受完毕
+        self.data_sock.close()
+        self.data_sock = None
+        code = self.get_res_code(self.expect_respond())
+        if code != 226:
+            raise InternalError('LIST failed!')
+
         return result
 
+    @login_required
+    def server_make_dir(self, dir_name):
+        assert type(dir_name) == str and dir_name != '', 'given dir name wrong'
+        self.send_msg('MKD ' + dir_name)
+        res = self.expect_respond()
+        code = self.get_res_code(res)
+        if code not in [257, 250]:
+            raise LogicError('The server rejected, see command for info')
+        self.console_log(0, 'server created dir: ' + dir_name)
+    
+    @login_required
+    def server_rename(self, from_name, to_name):
+        assert type(from_name) == str and from_name != '', 'given old file name wrong'
+        assert type(to_name) == str and to_name != '', 'given new file name wrong'
+        self.send_msg('RNFR ' + from_name)
+        res = self.expect_respond()
+        code = self.get_res_code(res)
+        if code != 350:
+            raise LogicError('The server rejected, see command for info')
+        self.send_msg('RNTO ' + to_name)
+        res = self.expect_respond()
+        code = self.get_res_code(res)
+        if code != 250:
+            raise LogicError('The server rejected, see command for info')
+        self.console_log(0, 'server renamed %s to %s.' % (from_name, to_name))
+    
+    @login_required
+    def server_delete(self, name):
+        assert type(name) == str and name != '', 'given dir name wrong'
+        self.send_msg('RMD ' + name)
+        res = self.expect_respond()
+        code = self.get_res_code(res)
+        if code != 250:
+            raise LogicError('The server rejected, see command for info')
+        self.console_log(0, 'server removed dir: ' + name)
 
         

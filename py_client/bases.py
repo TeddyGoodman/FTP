@@ -37,3 +37,10 @@ def offline_required(func):
             return func(self, *args, **kwargs)
     return wrapper
 
+def login_required(func):
+    def wrapper(self, *args, **kwargs):
+        if self.status != self.STATUS_LOGGED or self.control_sock is None:
+            raise LogicError('do login first')
+        else:
+            return func(self, *args, **kwargs)
+    return wrapper

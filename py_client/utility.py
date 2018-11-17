@@ -4,6 +4,9 @@ import os
 import re
 from bases import LogicError, InternalError
 
+FILE_INFO_DIR = 0
+FILE_INFO_FILE = 1
+
 def is_address(ip, port):
     assert type(ip) == str, 'input ip not a string'
     assert type(port) == int, 'input port not a number'
@@ -26,9 +29,9 @@ def parse_file_info(file_str):
     # print(ls)
     info = {}
     if ls[0][0] == 'd':
-        info['type'] = 1
+        info['type'] = FILE_INFO_DIR
     else:
-        info['type'] = 0
+        info['type'] = FILE_INFO_FILE
     
     info['name'] = ls[-1]
     return info
