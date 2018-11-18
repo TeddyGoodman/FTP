@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 import socket
 import re, os
-from bases import InternalError, LogicError, connect_required, offline_required, login_required
+from bases import InternalError, LogicError, connect_required, offline_required, login_required, transmitting_required
 import utility
+from file_thread import downloadThread, uploadThread
 
 class ClientSession:
-    # 回话状态
+    # 会话状态
     STATUS_OFFLINE = -1
     STATUS_CONNECT = 0
     STATUS_LOGGED = 1
@@ -22,6 +23,7 @@ class ClientSession:
         if not os.path.isdir(root):
             raise InternalError('input not a path')
         self.root_directory = root
+        self.console_log(0, 'local root set to: ' + root)
 
         # connect relative
         self.status = self.STATUS_OFFLINE
@@ -31,6 +33,13 @@ class ClientSession:
         if outer_show is not None and not callable(outer_show):
             raise InternalError('function given to Session not callable')
         self.outer_show = outer_show
+
+        # file relative
+        self.TRANSMITTING = False
+        self.trans_size = 0
+        self.is_upload = False
+        self.current_upload = {}
+        self.current_download = {}
 
         # server relative
         self.server_ip = ''
@@ -50,6 +59,7 @@ class ClientSession:
         assert type(new_root) == str, 'input not a string'
         if os.path.isdir(new_root):
             self.root_directory = new_root
+            self.console_log(0, 'local root changed to: ' + new_root)
         else:
             raise LogicError('wrong input')
 
@@ -107,6 +117,19 @@ class ClientSession:
         self.data_sock.connect((self.server_ip, datacon_port))
         return
 
+    @login_required
+    def change_trans_mode(self, ipaddr=''):
+        if self.trans_mode == self.MODE_PASV:
+            assert type(ipaddr) == str, 'input not a string'
+            if ipaddr == '' or (not utility.is_address(ipaddr, 0)):
+                raise LogicError('Input IP adress not legal')
+            self.trans_mode = self.MODE_PORT
+            self.console_log(0, 'transfer mode swtiched to PORT')
+        else:
+            self.trans_mode = self.MODE_PASV
+            self.console_log(0, 'transfer mode swtiched to PASV')
+        return
+
     @offline_required
     def connect(self, ip, port):
         if not utility.is_address(ip, port):
@@ -117,10 +140,17 @@ class ClientSession:
         self.server_port = port
         # 开始连接时才创建socket
         self.control_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.control_sock.connect((self.server_ip, self.server_port))
+        try:
+            self.control_sock.connect((self.server_ip, self.server_port))
+        except:
+            self.control_sock.close()
+            self.control_sock = None
+            raise LogicError('can\'t connect to server')
         code = self.get_res_code(self.expect_respond())
         if code != 220:
-            raise LogicError('can\'t connect to server')
+            self.control_sock.close()
+            self.control_sock = None
+            raise LogicError('server refused!')
         self.status = self.STATUS_CONNECT
         return
     
@@ -157,6 +187,10 @@ class ClientSession:
                 # 获取一下目录
                 self.get_server_current_root()
                 self.server_root = self.server_current_dir
+                self.send_msg('TYPE I')
+                code = self.get_res_code(self.expect_respond())
+                if code != 200:
+                    raise InternalError('Server rejected TYPE')
                 return
             elif code == 202:
                 raise LogicError('permission already granted')
@@ -231,10 +265,7 @@ class ClientSession:
         result = ''
         while True:
             data = self.data_sock.recv(self.BUFF_SIZE)
-            if data is None or data == '':
-                break
-            if len(data) < self.BUFF_SIZE:
-                result += data.decode()
+            if data is None or len(data) == 0:
                 break
             result += data.decode()
         
@@ -284,3 +315,106 @@ class ClientSession:
         self.console_log(0, 'server removed dir: ' + name)
 
         
+    '''
+    文件传输相关函数
+    '''
+    @login_required
+    def download_file(self, name='', size='', progress_func=None, finish_func=None):
+        assert type(name) == str, 'input not a string'
+
+        try:
+            if name == '' or size == '':
+                name = self.current_download['name']
+                size = self.current_download['size']
+                local_file = open(os.path.join(self.root_directory, name), 'ab+')
+            else:
+                self.current_download['name'] = name
+                self.current_download['size'] = size
+                local_file = open(os.path.join(self.root_directory, name), 'wb')
+        except Exception as e:
+            raise LogicError('Failed to open file: ' + str(e))
+
+        if self.trans_mode == self.MODE_PORT:
+            self.data_port()
+        else:
+            self.data_pasv()
+        self.send_msg('RETR ' + name)
+        code = self.get_res_code(self.expect_respond())
+        if code != 150:
+            raise InternalError('Server rejected RETR, see command for info')
+
+        self.down_thread = downloadThread(self.data_sock, local_file, self.BUFF_SIZE, size,  
+            progress_func=progress_func, finish_func=finish_func, have_done=self.trans_size)
+        self.down_thread.start()
+        self.TRANSMITTING = True
+        self.is_upload = False
+        self.console_log(0, 'begin downloading')
+
+    @login_required
+    def upload_file(self, name, size, progress_func=None, finish_func=None):
+        assert type(name) == str, 'input not a string'
+        if name == '' or size == '':
+            name = self.current_upload['name']
+            size = self.current_upload['size']
+        else:
+            self.current_upload['name'] = name
+            self.current_upload['size'] = size
+        try:
+            local_file = open(name, 'rb')
+        except Exception as e:
+            raise LogicError('Failed to open file: ' + str(e))
+        
+        if self.trans_mode == self.MODE_PORT:
+            self.data_port()
+        else:
+            self.data_pasv()
+
+        basename, filename = os.path.split(name)
+        self.send_msg('STOR ' + filename)
+
+        code = self.get_res_code(self.expect_respond())
+        if code != 150:
+            raise InternalError('Server rejected STOR, see command for info')
+
+        self.up_thread = uploadThread(self.data_sock, local_file, self.BUFF_SIZE, size,  
+            progress_func=progress_func, finish_func=finish_func)
+        
+        self.up_thread.start()
+        self.is_upload = True
+        self.TRANSMITTING = True
+        self.console_log(0, 'begin uploading')
+
+    @transmitting_required
+    def finish_trans_file(self, is_done, size_done):
+        if is_done:
+            code = self.get_res_code(self.expect_respond())
+            if code != 226:
+                raise InternalError('failed to transmit')
+            self.trans_size = 0
+            self.TRANSMITTING = False
+            self.console_log(0, 'finished transmit')
+        else:
+            code = self.get_res_code(self.expect_respond())
+            self.TRANSMITTING = False
+            self.trans_size = size_done
+            self.console_log(0, 'stopped at size ' + str(self.trans_size))
+
+    @transmitting_required
+    def stop_trans(self):
+        if hasattr(self, 'down_thread') and self.down_thread.isRunning():
+            self.down_thread.stop_transmit = True
+        elif hasattr(self, 'up_thread') and self.up_thread.isRunning():
+            self.up_thread.stop_transmit = True
+        else:
+            return
+
+    @login_required
+    def continue_transmit(self):
+        if self.is_upload:
+            pass
+        else:
+            self.send_msg('REST ' + str(self.trans_size))
+            code = self.get_res_code(self.expect_respond())
+            if code != 350:
+                raise InternalError('Server rejected REST')
+            return

@@ -8,6 +8,7 @@ FILE_INFO_DIR = 0
 FILE_INFO_FILE = 1
 
 def is_address(ip, port):
+    # 判断输入是否为一个IP地址
     assert type(ip) == str, 'input ip not a string'
     assert type(port) == int, 'input port not a number'
     ip_re = re.compile('^((25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}((25[0-5]|2[0-4]\d|[01]?\d?\d))$')
@@ -23,15 +24,18 @@ def parse_file_info(file_str):
     解析形如
     -rw-r--r--    1 1000     121       5689110 Oct 31 13:54 bbb.pdf
     格式的字符串
+    返回json字典，type、size、name字段分别表示：类型，大小，名字
     '''
     ls = file_str.split()
-    assert len(ls) >= 2, 'Input file string wrong'
-    # print(ls)
+    if len(ls) < 5:
+        raise InternalError('parse file info accept wrong input: ' + file_str)
+    
     info = {}
     if ls[0][0] == 'd':
         info['type'] = FILE_INFO_DIR
     else:
         info['type'] = FILE_INFO_FILE
     
+    info['size'] = int(ls[4])
     info['name'] = ls[-1]
     return info

@@ -2,15 +2,18 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from client_core import ClientSession
-import os
+import os,sys
 from bases import LogicError, InternalError
 from signals import *
 import utility
 
+LOCAL_ROOT = os.getcwd()
+
+# QT程序运行的装饰器，出现错误会以MessageBox形式提供
 def qt_front_wrapper(func):
     def wrapper(self, *args, **kwargs):
         try:
-            return func(self, *args, **kwargs)
+            func(self, *args, **kwargs)
         except LogicError as e:
             QMessageBox.information(self, 'Failed', 'Action Failed:' + str(e), 
                 QMessageBox.Yes, QMessageBox.Yes)
@@ -21,7 +24,6 @@ def qt_front_wrapper(func):
             QMessageBox.information(self, 'Error', 'Meet with Base Error: ' + str(e), 
                 QMessageBox.Yes, QMessageBox.Yes)
     return wrapper
-
 
 class CloudFileWidget(QListWidget):
     '''
@@ -34,27 +36,27 @@ class CloudFileWidget(QListWidget):
     def __init__(self):
         super(CloudFileWidget, self).__init__()
         self.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.current_select_name = ''
+        self.current_select_info = None
 
         # 定义发送的信号
-        self.file_signals = fileSignals()
+        self.file_signals = cloudFileSignals()
         makedir_act = QAction(u'MakeDir', self,
             triggered=lambda: self.file_signals.makedir.emit())
       
         # 定义服务器文件右键菜单
         self.file_right_menu = QMenu(self)
         self.file_right_menu.addAction(
-            QAction(u'Rename', self, triggered=lambda: self.file_signals.rename.emit(self.current_select_name)))
+            QAction(u'Rename', self, triggered=lambda: self.file_signals.rename.emit(self.current_select_info['name'])))
         self.file_right_menu.addAction(
-            QAction(u'Download', self, triggered=lambda: self.file_signals.download.emit(self.current_select_name)))
+            QAction(u'Download', self, triggered=lambda: self.file_signals.download.emit(self.current_select_info['name'], self.current_select_info['size'])))
         self.file_right_menu.addAction(makedir_act)
 
         # 定义服务器目录右键菜单
         self.dir_right_menu = QMenu(self)
         self.dir_right_menu.addAction(
-            QAction(u'Delete', self, triggered=lambda: self.file_signals.delete.emit(self.current_select_name)))
+            QAction(u'Delete', self, triggered=lambda: self.file_signals.delete.emit(self.current_select_info['name'])))
         self.dir_right_menu.addAction(
-            QAction(u'Enter', self, triggered=lambda: self.file_signals.enter.emit(self.current_select_name)))
+            QAction(u'Enter', self, triggered=lambda: self.file_signals.enter.emit(self.current_select_info['name'])))
         self.dir_right_menu.addAction(makedir_act)
 
         # 定义服务器默认右键菜单
@@ -66,16 +68,16 @@ class CloudFileWidget(QListWidget):
         if event.button() == Qt.LeftButton:
             cursor_item = self.itemAt(self.mapFromGlobal(QCursor.pos()))
             if cursor_item is not None and cursor_item.file_info['type'] == utility.FILE_INFO_DIR:
-                self.current_select_name = cursor_item.file_info['name']
-                self.file_signals.enter.emit(self.current_select_name)
+                self.current_select_info = cursor_item.file_info
+                self.file_signals.enter.emit(self.current_select_info['name'])
         return
 
     def mousePressEvent(self, mouse_event):
         super(CloudFileWidget, self).mousePressEvent(mouse_event)
         if mouse_event.button() == Qt.RightButton:
-            cursor_item = self.itemAt(self.mapFromGlobal(QCursor.pos()))
+            cursor_item = self.itemAt(self.viewport().mapFromGlobal(QCursor.pos()))
             if cursor_item is not None:
-                self.current_select_name = cursor_item.file_info['name']
+                self.current_select_info = cursor_item.file_info
             self.show_right_menu(cursor_item)
         return
     
@@ -109,24 +111,74 @@ class CloudFileWidget(QListWidget):
             info = utility.parse_file_info(line)
             if info['type'] == utility.FILE_INFO_DIR:
                 dir_item = QListWidgetItem(info['name'] + '/')
-                dir_item.file_info = {
-                    'name': info['name'],
-                    'type': utility.FILE_INFO_DIR
-                }
+                dir_item.file_info = info
                 self.addItem(dir_item)
             else:
                 file_item = QListWidgetItem(info['name'])
-                file_item.file_info = {
-                    'name': info['name'],
-                    'type': utility.FILE_INFO_FILE
-                }
+                file_item.file_info = info
                 self.addItem(file_item)
         return
     
+class LocalFileWidget(QTreeView):
+    '''
+    用于显示本地文件的Widget，添加了右键事件
+    '''
+
+    def __init__(self):
+        super(LocalFileWidget, self).__init__()
+
+        self.file_model = QFileSystemModel()
+        default_index = self.file_model.setRootPath(LOCAL_ROOT)
+        self.setModel(self.file_model)
+        self.setRootIndex(default_index)
+
+        # 显示相关
+        self.setAnimated(False)
+        self.setIndentation(20)
+        self.setSortingEnabled(False)
+        self.setWindowTitle('Dir View')
+
+        # 开启右键菜单
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+
+        # 定义发送的信号
+        self.file_signals = localFileSignals()
+        path_act = QAction(u'Select Path', self, 
+            triggered=lambda: self.file_signals.select_root.emit())
+      
+        # 定义默认右键菜单
+        self.default_right_menu = QMenu(self)
+        self.default_right_menu.addAction(path_act)
+
+        # 定义文件右键菜单
+        self.selected_info = {}
+        self.file_right_menu = QMenu(self)
+        self.file_right_menu.addAction(path_act)
+        self.file_right_menu.addAction(QAction(u'upload', self,
+            triggered=lambda: self.file_signals.upload.emit(
+                self.selected_info['name'], self.selected_info['size'])))
+
+    def mousePressEvent(self, event):
+        super(LocalFileWidget, self).mousePressEvent(event)
+        if event.button() == Qt.RightButton:
+            cursor_index = self.indexAt(self.viewport().mapFromGlobal(QCursor.pos()))
+            self.show_right_menu(cursor_index)
+
+    # 显示右键菜单
+    @qt_front_wrapper
+    def show_right_menu(self, index):
+        if index is None or self.file_model.isDir(index):
+            self.default_right_menu.exec_(QCursor.pos())
+        else:
+            self.selected_info['name'] = self.file_model.filePath(index)
+            self.selected_info['size'] = self.file_model.fileInfo(index).size()
+            self.file_right_menu.exec_(QCursor.pos())
+        return
+
 class ClientMain(QWidget):
     def __init__(self):
         super().__init__()
-        self.session = ClientSession(root=os.getcwd(), outer_show=self.show_command)
+        self.session = ClientSession(root=LOCAL_ROOT, outer_show=self.show_command)
         self.initUI()
     
     # 将窗口放置在屏幕中心
@@ -157,16 +209,19 @@ class ClientMain(QWidget):
         return
     # 声明文件相关的ui
     def files_ui(self):
+        self.mode_btn = QPushButton('Switch to PORT')
         self.cmd_prompt = QLabel('Command Prompt:')
         self.cmd_prompt_browser = QTextBrowser()
 
         self.local_files = QLabel('Local Files')
         self.cloud_files = QLabel('Cloud Files')
-        self.local_files_browser = QTextBrowser()
+        self.local_files_browser = LocalFileWidget()
         self.cloud_files_browser = CloudFileWidget()
         
         self.downloading = QLabel('Downloading')
-        self.downloading_browser = QLineEdit()
+        self.downloading_bar = QProgressBar()
+        self.downloading_btn = QPushButton('Pause')
+        self.downloading_btn.setVisible(False)
         return
     # 声明总体表格ui
     def set_grid_ui(self):
@@ -187,6 +242,7 @@ class ClientMain(QWidget):
         grid.addWidget(self.login_btn, 2, 6)
 
         grid.addWidget(self.cmd_prompt, 3, 0, 1, 2)
+        grid.addWidget(self.mode_btn, 3, 5, 1, 2)
         grid.addWidget(self.cmd_prompt_browser, 4, 0, 5, 0)
 
         grid.addWidget(self.local_files, 9, 0)
@@ -195,13 +251,17 @@ class ClientMain(QWidget):
         grid.addWidget(self.cloud_files_browser, 10, 4, 4, 3)
 
         grid.addWidget(self.downloading, 14, 0, 1, 2)
-        grid.addWidget(self.downloading_browser, 15, 0, 1, 0)
+        grid.addWidget(self.downloading_bar, 15, 0, 1, 6)
+        grid.addWidget(self.downloading_btn, 15, 6)
         return
     
     # 清空所有ui
     def clear_ui(self):
         self.cmd_prompt_browser.clear()
         self.cloud_files_browser.clear()
+        self.downloading_bar.setValue(0)
+        self.downloading_btn.setText('Pause')
+        self.downloading_btn.setVisible(False)
     
     def initUI(self):
         # 声明 ui
@@ -218,10 +278,16 @@ class ClientMain(QWidget):
         # 连接信号槽
         self.connect_btn.clicked.connect(self.connect_server)
         self.login_btn.clicked.connect(self.server_login)
-        self.cloud_files_browser.file_signals.enter.connect(self.enter_path)
+        self.mode_btn.clicked.connect(self.server_switch_mode)
+        self.downloading_btn.clicked.connect(self.pause_or_continue)
+
+        self.cloud_files_browser.file_signals.enter.connect(self.server_enter_path)
         self.cloud_files_browser.file_signals.makedir.connect(self.make_dir)
         self.cloud_files_browser.file_signals.rename.connect(self.rename_file)
         self.cloud_files_browser.file_signals.delete.connect(self.delete_file_dir)
+        self.cloud_files_browser.file_signals.download.connect(self.download_server_file)
+        self.local_files_browser.file_signals.select_root.connect(self.local_enter_path)
+        self.local_files_browser.file_signals.upload.connect(self.upload_local_file)
 
         self.show()
     
@@ -274,6 +340,22 @@ class ClientMain(QWidget):
         return
 
     @qt_front_wrapper
+    def server_switch_mode(self, *args, **kwargs):
+        if self.session.trans_mode == self.session.MODE_PASV:
+            name,ok = QInputDialog.getText(self,'Input',"Please input the IP address of local(note that we do not recommend port mode): ",
+                QLineEdit.Normal, '127.0.0.1')
+            if ok:
+                self.session.change_trans_mode(ipaddr=name)
+                self.mode_btn.setText('Switch to PASV')
+                QMessageBox.information(self, 'Message', 'mode successfully changed',
+                    QMessageBox.Yes, QMessageBox.Yes)
+        else:
+            self.session.change_trans_mode()
+            self.mode_btn.setText('Switch to PORT')
+            QMessageBox.information(self, 'Message', 'mode successfully changed',
+                QMessageBox.Yes, QMessageBox.Yes)
+
+    @qt_front_wrapper
     def update_cloud_file(self):
         files_str = self.session.list_server_file() # 获取目录下所有文件
         if self.session.in_server_root():
@@ -282,9 +364,19 @@ class ClientMain(QWidget):
             self.cloud_files_browser.update_files_show(files_str, True)
 
     @qt_front_wrapper
-    def enter_path(self, path_name):
+    def server_enter_path(self, path_name):
         self.session.change_server_current_root(path_name)
         self.update_cloud_file()
+        return
+
+    @qt_front_wrapper
+    def local_enter_path(self):
+        dir_sel= QFileDialog.getExistingDirectory(self, 'Select a directory', './')
+        if dir_sel == '':
+            return
+        new_index = self.local_files_browser.file_model.setRootPath(dir_sel)
+        self.local_files_browser.setRootIndex(new_index)
+        self.session.set_root(dir_sel)
         return
 
     @qt_front_wrapper
@@ -315,4 +407,46 @@ class ClientMain(QWidget):
         self.update_cloud_file()
         return
 
-        
+    @qt_front_wrapper
+    def change_progress_bar(self, num):    
+        self.downloading_bar.setValue(num)
+
+    @qt_front_wrapper
+    def finish_transmit(self, is_done, size_done):
+        self.session.finish_trans_file(is_done, size_done)
+        if is_done:
+            QMessageBox.information(self, 'Successful', 'Transmitting finished', 
+                QMessageBox.Yes, QMessageBox.Yes)
+            self.change_progress_bar(0)
+            self.downloading_btn.setVisible(False)
+        else:
+            QMessageBox.information(self, 'Successful', 'Transmitting paused', 
+                QMessageBox.Yes, QMessageBox.Yes)
+        self.update_cloud_file()
+
+    @qt_front_wrapper
+    def download_server_file(self, name, size):
+        self.session.download_file(name, size, progress_func=self.change_progress_bar, 
+            finish_func=self.finish_transmit)
+        self.downloading_btn.setVisible(True)
+        return
+    
+    @qt_front_wrapper
+    def upload_local_file(self, name, size):
+        self.session.upload_file(name, size, progress_func=self.change_progress_bar, 
+            finish_func=self.finish_transmit)
+        self.downloading_btn.setVisible(True)
+        return
+
+    @qt_front_wrapper
+    def pause_or_continue(self, *args, **kwargs):
+        if self.session.TRANSMITTING:
+            # 正在传输，意味着要停止
+            self.session.stop_trans()
+            self.downloading_btn.setText('Continue')
+        else:
+            # 停止了，意味着要继续
+            self.session.continue_transmit()
+            self.session.download_file(progress_func=self.change_progress_bar, 
+                finish_func=self.finish_transmit)
+            self.downloading_btn.setText('Pause')
