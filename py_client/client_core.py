@@ -17,6 +17,13 @@ class ClientSession:
 
     BUFF_SIZE = 4096
 
+    # 传输状态
+    TRANS_NO_TASK = 0
+    TRANS_DOWN_GOING = 1
+    TRANS_UP_GOING = 2
+    TRANS_DOWN_STOP = 3
+    TRANS_UP_STOP = 4
+
     def __init__(self, root='/tmp', outer_show=None):
 
         # local relative
@@ -37,7 +44,7 @@ class ClientSession:
         # file relative
         self.TRANSMITTING = False
         self.trans_size = 0
-        self.is_upload = False
+        self.trans_status = self.TRANS_NO_TASK
         self.current_upload = {}
         self.current_download = {}
 
@@ -130,6 +137,9 @@ class ClientSession:
             self.console_log(0, 'transfer mode swtiched to PASV')
         return
 
+    '''
+    --------------- 连接相关 ---------------------
+    '''
     @offline_required
     def connect(self, ip, port):
         if not utility.is_address(ip, port):
@@ -162,6 +172,10 @@ class ClientSession:
         # 连接关闭后置为None
         self.control_sock = None
         self.status = self.STATUS_OFFLINE
+        self.trans_status = self.TRANS_NO_TASK
+        self.trans_size = 0
+        self.current_upload = {}
+        self.current_download = {}
         self.console_log(0, 'disconnected with the host')
         return
 
@@ -314,26 +328,26 @@ class ClientSession:
             raise LogicError('The server rejected, see command for info')
         self.console_log(0, 'server removed dir: ' + name)
 
-        
     '''
     文件传输相关函数
     '''
     @login_required
-    def download_file(self, name='', size='', progress_func=None, finish_func=None):
-        assert type(name) == str, 'input not a string'
+    def download_file(self, name='', size=0, progress_func=None, finish_func=None):
+        if self.trans_status == self.TRANS_NO_TASK:
+            # 开启一个新下载任务
+            self.current_download['name'] = name
+            self.current_download['size'] = size
+            self.trans_size = 0
+            local_file = open(os.path.join(self.root_directory, name), 'wb')
+        elif self.trans_status == self.TRANS_DOWN_STOP:
+            # 继续下载文件
+            name = self.current_download['name']
+            size = self.current_download['size']
+            local_file = open(os.path.join(self.root_directory, name), 'ab+')
+        else:
+            return
 
-        try:
-            if name == '' or size == '':
-                name = self.current_download['name']
-                size = self.current_download['size']
-                local_file = open(os.path.join(self.root_directory, name), 'ab+')
-            else:
-                self.current_download['name'] = name
-                self.current_download['size'] = size
-                local_file = open(os.path.join(self.root_directory, name), 'wb')
-        except Exception as e:
-            raise LogicError('Failed to open file: ' + str(e))
-
+        # enter mode
         if self.trans_mode == self.MODE_PORT:
             self.data_port()
         else:
@@ -343,27 +357,32 @@ class ClientSession:
         if code != 150:
             raise InternalError('Server rejected RETR, see command for info')
 
+        # 创建进程开始下载
         self.down_thread = downloadThread(self.data_sock, local_file, self.BUFF_SIZE, size,  
             progress_func=progress_func, finish_func=finish_func, have_done=self.trans_size)
         self.down_thread.start()
         self.TRANSMITTING = True
-        self.is_upload = False
+        self.trans_status = self.TRANS_DOWN_GOING
         self.console_log(0, 'begin downloading')
 
     @login_required
-    def upload_file(self, name, size, progress_func=None, finish_func=None):
-        assert type(name) == str, 'input not a string'
-        if name == '' or size == '':
-            name = self.current_upload['name']
-            size = self.current_upload['size']
-        else:
+    def upload_file(self, name='', size=0, progress_func=None, finish_func=None):
+        if self.trans_status == self.TRANS_NO_TASK:
+            # 开启一个新上传任务
             self.current_upload['name'] = name
             self.current_upload['size'] = size
-        try:
+            self.trans_size = 0
             local_file = open(name, 'rb')
-        except Exception as e:
-            raise LogicError('Failed to open file: ' + str(e))
+        elif self.trans_status == self.TRANS_UP_STOP:
+            # 继续上传文件
+            name = self.current_upload['name']
+            size = self.current_upload['size']
+            local_file = open(name, 'rb')
+            local_file.seek(self.trans_size)
+        else:
+            return
         
+        # enter mode
         if self.trans_mode == self.MODE_PORT:
             self.data_port()
         else:
@@ -376,14 +395,15 @@ class ClientSession:
         if code != 150:
             raise InternalError('Server rejected STOR, see command for info')
 
+        # 创建进程开始下载
         self.up_thread = uploadThread(self.data_sock, local_file, self.BUFF_SIZE, size,  
-            progress_func=progress_func, finish_func=finish_func)
-        
+            progress_func=progress_func, finish_func=finish_func, have_done=self.trans_size)
         self.up_thread.start()
-        self.is_upload = True
         self.TRANSMITTING = True
+        self.trans_status = self.TRANS_UP_GOING
         self.console_log(0, 'begin uploading')
 
+    # 文件传输结束或停止之后
     @transmitting_required
     def finish_trans_file(self, is_done, size_done):
         if is_done:
@@ -392,13 +412,21 @@ class ClientSession:
                 raise InternalError('failed to transmit')
             self.trans_size = 0
             self.TRANSMITTING = False
+            self.trans_status = self.TRANS_NO_TASK
             self.console_log(0, 'finished transmit')
         else:
             code = self.get_res_code(self.expect_respond())
             self.TRANSMITTING = False
             self.trans_size = size_done
+            if self.trans_status == self.TRANS_DOWN_GOING:
+                self.trans_status = self.TRANS_DOWN_STOP
+            elif self.trans_status == self.TRANS_UP_GOING:
+                self.trans_status = self.TRANS_UP_STOP
+            else:
+                raise InternalError('pause but status wrong')
             self.console_log(0, 'stopped at size ' + str(self.trans_size))
 
+    # 停止一个文件传输的过程
     @transmitting_required
     def stop_trans(self):
         if hasattr(self, 'down_thread') and self.down_thread.isRunning():
@@ -408,13 +436,14 @@ class ClientSession:
         else:
             return
 
+    # 继续文件的传输
     @login_required
     def continue_transmit(self):
-        if self.is_upload:
-            pass
-        else:
+        if self.trans_status == self.TRANS_DOWN_STOP or self.trans_status == self.TRANS_UP_STOP:
             self.send_msg('REST ' + str(self.trans_size))
             code = self.get_res_code(self.expect_respond())
             if code != 350:
                 raise InternalError('Server rejected REST')
             return
+        else:
+            raise InternalError('continue but status wrong')            

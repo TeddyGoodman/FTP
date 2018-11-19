@@ -26,16 +26,17 @@ def parse_file_info(file_str):
     格式的字符串
     返回json字典，type、size、name字段分别表示：类型，大小，名字
     '''
-    ls = file_str.split()
-    if len(ls) < 5:
+    file_re = re.compile('(\S*)\s*\S*\s*\S*\s*\S*\s*(\S*)\s*\S*\s*\S*\s*\S*\s*(.*)')
+    match_ans = file_re.match(file_str)
+    if len(match_ans.groups()) < 3:
         raise InternalError('parse file info accept wrong input: ' + file_str)
     
     info = {}
-    if ls[0][0] == 'd':
+    if match_ans.groups()[0][0] == 'd':
         info['type'] = FILE_INFO_DIR
     else:
         info['type'] = FILE_INFO_FILE
     
-    info['size'] = int(ls[4])
-    info['name'] = ls[-1]
+    info['size'] = int(match_ans.groups()[1])
+    info['name'] = match_ans.groups()[2]
     return info

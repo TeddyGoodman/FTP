@@ -279,6 +279,7 @@ class ClientMain(QWidget):
         self.connect_btn.clicked.connect(self.connect_server)
         self.login_btn.clicked.connect(self.server_login)
         self.mode_btn.clicked.connect(self.server_switch_mode)
+        self.mode_btn.setVisible(False) # 暂时不实现port
         self.downloading_btn.clicked.connect(self.pause_or_continue)
 
         self.cloud_files_browser.file_signals.enter.connect(self.server_enter_path)
@@ -339,6 +340,7 @@ class ClientMain(QWidget):
         self.update_cloud_file()
         return
 
+    # 点击切换模式按键后
     @qt_front_wrapper
     def server_switch_mode(self, *args, **kwargs):
         if self.session.trans_mode == self.session.MODE_PASV:
@@ -355,6 +357,7 @@ class ClientMain(QWidget):
             QMessageBox.information(self, 'Message', 'mode successfully changed',
                 QMessageBox.Yes, QMessageBox.Yes)
 
+    # 更新云端文件的显示
     @qt_front_wrapper
     def update_cloud_file(self):
         files_str = self.session.list_server_file() # 获取目录下所有文件
@@ -363,12 +366,14 @@ class ClientMain(QWidget):
         else:
             self.cloud_files_browser.update_files_show(files_str, True)
 
+    # 服务器进入某个路径
     @qt_front_wrapper
     def server_enter_path(self, path_name):
         self.session.change_server_current_root(path_name)
         self.update_cloud_file()
         return
 
+    # 本地进入路径，和右键菜单相连
     @qt_front_wrapper
     def local_enter_path(self):
         dir_sel= QFileDialog.getExistingDirectory(self, 'Select a directory', './')
@@ -379,6 +384,7 @@ class ClientMain(QWidget):
         self.session.set_root(dir_sel)
         return
 
+    # 在服务器端创建目录
     @qt_front_wrapper
     def make_dir(self):
         name,ok = QInputDialog.getText(self,'Input',"Please input a directory name: ",
@@ -390,6 +396,7 @@ class ClientMain(QWidget):
                 self.session.server_make_dir(name)
                 self.update_cloud_file()
 
+    # 服务器文件重命名
     @qt_front_wrapper
     def rename_file(self, file_name):
         new_name,ok = QInputDialog.getText(self,'Input',"Please input a new file name: ",
@@ -401,16 +408,19 @@ class ClientMain(QWidget):
                 self.session.server_rename(file_name, new_name)
                 self.update_cloud_file()
     
+    # 服务器删除目录
     @qt_front_wrapper
     def delete_file_dir(self, name):
         self.session.server_delete(name)
         self.update_cloud_file()
         return
 
+    # 改变进度条
     @qt_front_wrapper
     def change_progress_bar(self, num):    
         self.downloading_bar.setValue(num)
 
+    # 结束传输，在多线程结束后发送signal，在这里相连
     @qt_front_wrapper
     def finish_transmit(self, is_done, size_done):
         self.session.finish_trans_file(is_done, size_done)
@@ -424,6 +434,7 @@ class ClientMain(QWidget):
                 QMessageBox.Yes, QMessageBox.Yes)
         self.update_cloud_file()
 
+    # 和点击下载相连
     @qt_front_wrapper
     def download_server_file(self, name, size):
         self.session.download_file(name, size, progress_func=self.change_progress_bar, 
@@ -431,6 +442,7 @@ class ClientMain(QWidget):
         self.downloading_btn.setVisible(True)
         return
     
+    # 和点击上传相连
     @qt_front_wrapper
     def upload_local_file(self, name, size):
         self.session.upload_file(name, size, progress_func=self.change_progress_bar, 
@@ -438,6 +450,7 @@ class ClientMain(QWidget):
         self.downloading_btn.setVisible(True)
         return
 
+    # 和点击暂停/开始相连
     @qt_front_wrapper
     def pause_or_continue(self, *args, **kwargs):
         if self.session.TRANSMITTING:
@@ -447,6 +460,12 @@ class ClientMain(QWidget):
         else:
             # 停止了，意味着要继续
             self.session.continue_transmit()
-            self.session.download_file(progress_func=self.change_progress_bar, 
-                finish_func=self.finish_transmit)
+            if self.session.trans_status == self.session.TRANS_DOWN_STOP:
+                self.session.download_file(progress_func=self.change_progress_bar, 
+                    finish_func=self.finish_transmit)
+            elif self.session.trans_status == self.session.TRANS_UP_STOP:
+                self.session.upload_file(progress_func=self.change_progress_bar, 
+                    finish_func=self.finish_transmit)
+            else:
+                raise InternalError('wrong in widget')
             self.downloading_btn.setText('Pause')

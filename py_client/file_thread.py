@@ -41,7 +41,7 @@ class downloadThread(QtCore.QThread):
 
 class uploadThread(QtCore.QThread):
     def __init__(self, data_sock, file_obj, BUFF_SIZE, total_size,
-        progress_func=None, finish_func=None):
+        progress_func=None, finish_func=None, have_done=0):
         super(uploadThread, self).__init__()
         self.data_sock = data_sock
         self.file_obj = file_obj
@@ -53,9 +53,10 @@ class uploadThread(QtCore.QThread):
         if finish_func:
             self.transmit_signal.finished.connect(finish_func)
         self.stop_transmit = False
+        self.have_done = have_done
     
     def run(self):
-        current_size = 0
+        current_size = self.have_done
         self.transmit_signal.progress.emit(0)
         while True:
             if self.stop_transmit:
