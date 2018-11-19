@@ -30,9 +30,11 @@ typedef struct session
 	int is_RNFR; //上一条消息是否是RNFR
 	char* pre_msg_content; //保存上一条消息的内容
 	char* sentence; //保存发送的和接受的消息
-    // char* command; //保存命令
-    // char* parameter; //保存参数
     char* working_root; //工作目录
+
+    int rest_ptr;
+    int is_transmitting;
+
 }session;
 
 int init_session(session* sess, int client_fd, char* global_file_root);

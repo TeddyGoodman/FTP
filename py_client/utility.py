@@ -26,7 +26,7 @@ def parse_file_info(file_str):
     格式的字符串
     返回json字典，type、size、name字段分别表示：类型，大小，名字
     '''
-    file_re = re.compile('(\S*)\s*\S*\s*\S*\s*\S*\s*(\S*)\s*\S*\s*\S*\s*\S*\s*(.*)')
+    file_re = re.compile('^(\S*)\s*\S*\s*\S*\s*\S*\s*(\S*)\s*\S*\s*\S*\s*\S*\s*(.*)$')
     match_ans = file_re.match(file_str)
     if len(match_ans.groups()) < 3:
         raise InternalError('parse file info accept wrong input: ' + file_str)

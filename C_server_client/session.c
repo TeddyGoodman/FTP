@@ -21,6 +21,9 @@ int init_session(session* sess, int client_fd, char* global_file_root) {
 	sess->pasv_lis_fd = 0;
 	sess->client_fd = client_fd;
 	sess->current_pasv = -1;
+
+    sess->rest_ptr = 0;
+    sess->is_transmitting = 0;
 	
 	sprintf(sess->working_root, "%s", global_file_root);
 	return 0;

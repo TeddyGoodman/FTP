@@ -106,7 +106,7 @@ class ClientSession:
         # 解析服务器返回的字符串
         reg = re.compile('^\S*\s\D*(\d{1,3},\d{1,3},\d{1,3},\d{1,3}),(\d{1,3},\d{1,3}).*$')
         match_ans = reg.match(res)
-        assert match_ans is not None, 'matching result is none'
+        assert match_ans is not None, 'matching result is none, respond is: ' + res
         assert len(match_ans.groups()) == 2, 'match result is wrong: ' + str(match_ans)
         
         datacon_ip = match_ans.groups()[0].replace(',', '.')
@@ -232,7 +232,7 @@ class ClientSession:
             raise InternalError('Server rejected PWD')
         dir_re = re.compile('[^"]*"([^"]*)".*')
         match_ans = dir_re.match(res)
-        assert match_ans is not None, 'matching result is none'
+        assert match_ans is not None, 'matching result is none, respond is:' + res
         assert len(match_ans.groups()) == 1, 'match result is wrong: ' + str(match_ans)
         self.server_current_dir = match_ans.groups()[0]
         self.console_log(0, 'server\'s root dir is: ' + self.server_current_dir)

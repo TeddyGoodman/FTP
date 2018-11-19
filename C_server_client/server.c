@@ -159,7 +159,7 @@ void serve_client(int client_fd) {
         remove_enter(client_sess.sentence);
 
         //对内容进行匹配
-        count = sscanf(client_sess.sentence, "%s %s %c", command, parameter, &check_s);
+        count = sscanf(client_sess.sentence, "%s %c", command, &check_s);
 
         if (count < 0) {
             printf("None string read.\n");
@@ -170,15 +170,10 @@ void serve_client(int client_fd) {
             //处理无参数指令
             code = dispatch_cmd(command, NULL, &client_sess);
         }
-        else if (count == 2){
+        else{
             //处理有参数指令
+            sprintf(parameter, "%s", client_sess.sentence + strlen(command) + 1);
             code = dispatch_cmd(command, parameter, &client_sess);
-        }
-        else {
-            //此处可能需要处理文件名带有空格的指令
-            printf("read more than 2.\n");
-            reply_custom_msg(&client_sess, 501, "too many parameters.");
-            continue;
         }
 
         //code为221则断开连接
@@ -201,6 +196,10 @@ void serve_client(int client_fd) {
 */
 int dispatch_cmd(char* cmd, char* para, session* sess) {
     int code;
+    if (sess->is_transmitting) {
+        reply_custom_msg(sess, 530, "transmit is going.");
+        return 530;
+    }
 
     //总体判断,修改is_RNFR
     if (sess->is_RNFR && strcmp(cmd, "RNTO") != 0) {
@@ -259,6 +258,9 @@ int dispatch_cmd(char* cmd, char* para, session* sess) {
 	else if (strcmp(cmd, "LIST") == 0) {
 		code = cmd_list(para, sess);
 	}
+    else if (strcmp(cmd, "REST") == 0) {
+        code = cmd_rest(para, sess);
+    }
     else {
         code = 502;
         reply_form_msg(sess, code);

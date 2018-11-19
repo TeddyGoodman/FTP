@@ -4,11 +4,11 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-// #include <sys/sendfile.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <time.h>
 #include <dirent.h>
+#include <pthread.h>
 #include "utility.h"
 #include "command.h"
 #include "session.h"
@@ -32,7 +32,7 @@ int cmd_user(char* para, session* sess) {
 		reply_form_msg(sess, 530);
 		return 530;	
 	}
-	//only support anonymous
+	// only support anonymous
 	// 331 or 332 for permission might be granted after a PASS request
 	if (strcmp(para, "anonymous") == 0) {
 		sess->login_status = need_pass;
@@ -44,11 +44,6 @@ int cmd_user(char* para, session* sess) {
 		reply_form_msg(sess, 530);
 		return 530;
 	}
-	// 230 for client has permission to access files under that username
-	// 或许是一个通用的用户名？
-	// 230 情况下:
-	// *login = logged;
-
 }
 
 int cmd_pass(char* para, session* sess) {
@@ -111,7 +106,7 @@ int cmd_type(char* para, session* sess) {
 		return 530;
 	}
 
-	//可能需要定制消息
+	// 回复200
 	if (strcmp(para, "I") == 0) {
 		reply_custom_msg(sess, 200, "Type set to I.");
 		return 200;
@@ -150,13 +145,12 @@ int cmd_pwd(char* para, session* sess) {
 	}
 
 	char* temp_msg = (char*)malloc(512);
-	sprintf(temp_msg, "%s is current directory.", sess->working_root);
+	sprintf(temp_msg, "\"%s\" is current directory.", sess->working_root);
 	reply_custom_msg(sess, 257, temp_msg);
 	free(temp_msg);
 	return 257;
 }
 
-//路径方面的问题：encoded和空格等需不需要想法处理
 int cmd_cwd(char* para, session* sess) {
 	if (para == NULL) {
 		reply_form_msg(sess, 504);
@@ -335,14 +329,14 @@ int cmd_rnto(char* para, session* sess) {
 	if (dir != NULL) {
 		//原文件位置为sess->pre_msg_content
 		char* shell_cmd = (char*)malloc(512);
-		sprintf(shell_cmd, "mv %s %s", sess->pre_msg_content, dir);
+		sprintf(shell_cmd, "mv \"%s\" \"%s\"", sess->pre_msg_content, dir);
 		if (system(shell_cmd) == -1) {
 			printf("Error running shell: %s(%d)\n", strerror(errno), errno);
 			reply_custom_msg(sess, 550, "mv command failed.");
 			code = 550;
 		}
 		else {
-			reply_custom_msg(sess, 550, "mv command successful.");
+			reply_custom_msg(sess, 250, "mv command successful.");
 			code = 250;
 		}
 		free(shell_cmd);
@@ -425,14 +419,24 @@ int cmd_pasv(char* para, session* sess) {
     reply_custom_msg(sess, 227, reply_msg);
 
     //返回227之后做这个事情
+    pthread_t thid;
+    pthread_create(&thid, NULL, (void*)pasv_accept_pthread, (void*)sess);
+    pthread_detach(thid);
+
+	return 227;
+}
+
+void* pasv_accept_pthread(void* ptr) {
+    session* sess = (session*)ptr;
 	struct sockaddr_in client_fd;
 	unsigned int size_sock = sizeof(struct sockaddr_in);
 	if ((sess->data_fd = accept(sess->pasv_lis_fd,
 			(struct sockaddr *)&(client_fd),&size_sock)) == -1) {
         printf("Error accept(): %s(%d)\n", strerror(errno), errno);
-        return 425;
+        // return 425;
+        return NULL;
     }
-	return 227;
+    return NULL;
 }
 
 int cmd_port(char* para, session* sess) {
@@ -529,6 +533,29 @@ int cmd_list(char* para, session* sess) {
 	}
 }
 
+int cmd_rest(char* para, session* sess) {
+	if (para == NULL) {
+		reply_form_msg(sess, 504);
+		return 504;
+	}
+	if (sess->login_status == unlogged ||
+		sess->login_status == need_pass) {
+		reply_form_msg(sess, 530);
+		return 530;
+	}
+
+    int give_num;
+    char check;
+    int count = sscanf(para, "%d %c", &give_num, &check);
+    if (count != 1) {
+        reply_form_msg(sess, 501);
+        return 501;
+    }
+    sess->rest_ptr = give_num;
+    reply_custom_msg(sess, 350, "rest set successful.");
+    return 350;
+}
+
 int cmd_retr(char* para, session* sess) {
 	if (para == NULL) {
 		reply_form_msg(sess, 504);
@@ -559,24 +586,16 @@ int cmd_retr(char* para, session* sess) {
 		return 451;
 	}
 
-	int temp_code = retrieve_file(sess, file);
-	reply_form_msg(sess, temp_code);
-	if (temp_code != 226) {
-		close(sess->data_fd);
-		sess->data_fd = 0;
-		if (sess->current_pasv == 1) {
-			//pasv模式
-			close(sess->pasv_lis_fd);
-			sess->pasv_lis_fd = 0;
-		}
-		close(file);
-	}
-	sess->current_pasv = -1;
-	return temp_code;
-	// accepts 226 if the entire file was successfully written to the server's TCP buffers;
-	// rejects 425 if no TCP connection was established;
-	// rejects 426 if the TCP connection was established but then broken by the client or by network failure; or
-	// rejects 451 or 551 if the server had trouble reading the file from disk.
+    sess->is_transmitting = 1;
+    pthread_t thid;
+    transmit_input* input = (transmit_input*)malloc(sizeof(transmit_input));
+    input->sess = sess;
+    input->file = file;
+    pthread_create(&thid, NULL, (void*)retrieve_file_pthread, (void*)input);
+    pthread_detach(thid);
+
+    //the return code is just not close connection, the real reply i in retrieve_file
+	return 226;
 }
 
 int cmd_stor(char* para, session* sess) {
@@ -599,31 +618,31 @@ int cmd_stor(char* para, session* sess) {
 		return 451;
 	}
 
-	int file = open(abs_dir, O_WRONLY | O_CREAT | O_TRUNC, 
-		S_IRWXU | S_IXGRP | S_IROTH | S_IXOTH | S_IRGRP);
+    int file;
+    if (sess->rest_ptr != 0)
+        file = open(abs_dir, O_WRONLY | O_APPEND,
+            S_IRWXU | S_IXGRP | S_IROTH | S_IXOTH | S_IRGRP);
+    else file = open(abs_dir, O_WRONLY | O_CREAT | O_TRUNC, 
+            S_IRWXU | S_IXGRP | S_IROTH | S_IXOTH | S_IRGRP);
+
 	if (file == -1) {
 		// 没有权限
-		reply_custom_msg(sess, 451, "failed, no permission.");
+		reply_custom_msg(sess, 451, "failed, no permission or not exist.");
 		sess->current_pasv = -1;
 		return 451;
 	}
 
 	reply_custom_msg(sess, 150, "Begin store the given file.");
 
-	int temp_code = store_file(sess, file);
-	reply_form_msg(sess, temp_code);
-	if (temp_code != 226) {
-		close(sess->data_fd);
-		sess->data_fd = 0;
-		if (sess->current_pasv == 1) {
-			//pasv模式
-			close(sess->pasv_lis_fd);
-			sess->pasv_lis_fd = 0;
-		}
-		close(file);
-	}
-	sess->current_pasv = -1;
-	return temp_code;
+    sess->is_transmitting = 1;
+    pthread_t thid;
+    transmit_input* input = (transmit_input*)malloc(sizeof(transmit_input));
+    input->sess = sess;
+    input->file = file;
+    pthread_create(&thid, NULL, (void*)store_file_pthread, (void*)input);
+    pthread_detach(thid);
+
+	return 226;
 }
 
 /*
@@ -648,39 +667,27 @@ int reply_list(session* sess, char* dir) {
 
     //开始处理
     char* list_res = (char*)malloc(4096);
-    struct stat dir_stat;
-    DIR *dir_p;
-    struct dirent *dp;
-    int offset = 0;
+    FILE* fp = NULL;
+	char* cmd = (char*)malloc(256);
 
-    offset += sprintf(list_res, "%s", "   name   |   type   |   size   |   modified time\r\n");
-	
-	//获取目录属性失败
-    if (stat(dir, &dir_stat) < 0) return 451;
-
-    if (S_ISREG(dir_stat.st_mode)) {
-    	//是一个普通文件
-    	sprintf(list_res + offset, "%s", file_info(&dir_stat, dir));
-    }
-    //是一个目录
-    else if (S_ISDIR(dir_stat.st_mode)) {
-        dir_p = opendir(dir);
-        while ((dp = readdir(dir_p)) != NULL) {
-            // 忽略 . 和 ..
-            if (strcmp(".", dp->d_name) == 0 ) continue;
-            if (strcmp("..", dp->d_name) == 0 ) continue;
-			
-			char* temp_info;
-			temp_info = file_info(&dir_stat, dp->d_name);
-    		offset += sprintf(list_res + offset, "%s", temp_info);
-			free(temp_info);
+	sprintf(cmd, "ls -l \"%s\"", dir);
+	fp = popen(cmd, "r");
+	if (fp){
+		// 首先读出一行
+		while (fread(list_res, 1, 1, fp)){
+			if (list_res[0] == '\n') break;
+		}
+        while(1) {
+            int read_size = fread(list_res, 1, 4096, fp);
+            if (read_size == 0) break;
+            else list_res[read_size] = '\0';
+	        send(sess->data_fd, list_res, strlen(list_res), MSG_WAITALL);
         }
-        closedir(dir_p);
-    }
-    else return 451;
+		pclose(fp);
+	}
 
-	send(sess->data_fd, list_res, strlen(list_res), MSG_WAITALL);
 	free(list_res);
+    free(cmd);
 	//传输完成
 	close(sess->data_fd);
 	sess->data_fd = 0;
@@ -695,49 +702,72 @@ int reply_list(session* sess, char* dir) {
 /*
 * retr，下载文件，服务器端上传
 */
-int retrieve_file(session* sess, int file){
+void* retrieve_file_pthread(void* transmit_in){
+    // 获取输入
+    session* sess = ((transmit_input*)transmit_in)->sess;
+    int file = ((transmit_input*)transmit_in)->file;
+
 	//未建立任何连接或没有建立data套接字
-	if (sess->current_pasv == -1) return 425;
+	if (sess->current_pasv == -1) {
+        reply_form_msg(sess, 425);
+        return NULL;
+    }
 	else if (sess->current_pasv == 0) {
 		//port,模式,服务器发起连接,此时已经存在data_fd
-		if (sess->data_fd <= 0) return 425;
+		if (sess->data_fd <= 0) {
+            reply_form_msg(sess, 425);
+            return NULL;
+        }
 		if (connect(sess->data_fd, (struct sockaddr*)&sess->client_addr,
 				sizeof(sess->client_addr)) < 0) {
 			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
-			return 426;
+            reply_form_msg(sess, 426);
+			return NULL;
 		}
 	}
 	else{
 		//pasv模式,此时连接应该已经建立
-		if (sess->data_fd <= 0) return 425;
+		if (sess->data_fd <= 0) {
+            reply_form_msg(sess, 425);
+            return NULL;
+        }
     }
 
 	struct stat file_stat;
 	fstat(file, &file_stat);
 
 	long long bytes_to_send = file_stat.st_size;
+    bytes_to_send -= sess->rest_ptr;
+    if (bytes_to_send <= 0) {
+        reply_form_msg(sess, 450);
+        return NULL;
+    }
+    lseek(file, sess->rest_ptr, SEEK_SET);
 	
-	// for linux
-	// while(bytes_to_send) {
-	// 	int temp_size = bytes_to_send > 4096 ? 4096 : bytes_to_send;
-	// 	int sent_size = sendfile(sess->data_fd, file, NULL, temp_size);
-	// 	if (sent_size == -1) return 426;
-	// 	bytes_to_send -= sent_size;
-	// }
-
-	//for macos
 	char* buff = (char*)malloc(4096);
+    int meet_error = 0;
+    signal(SIGPIPE, SIG_IGN);
 	while (bytes_to_send) {
 		int temp_size = bytes_to_send > 4096 ? 4096 : bytes_to_send;
     	int read_size = read(file, buff, temp_size);
-    	if (read_size == -1) return 426;
+    	if (read_size == -1) {
+            meet_error = 450;
+            break;
+        }
     	else if (read_size > 0) {
-    		write(sess->data_fd, buff, read_size);
+            int write_size = write(sess->data_fd, buff, read_size);
+    		if (write_size <= 0) {
+                meet_error = 426;
+                break;
+            }
     	}
     	bytes_to_send -= read_size;
     }
-    
-    free(buff);
+
+    if (meet_error)
+        reply_form_msg(sess, meet_error);
+    else reply_form_msg(sess, 226);
+
 	//传输完成,关闭连接
 	close(sess->data_fd);
 	sess->data_fd = 0;
@@ -747,44 +777,71 @@ int retrieve_file(session* sess, int file){
 		sess->pasv_lis_fd = 0;
 	}
 	close(file);
-	return 226;
+	sess->current_pasv = -1;
+    sess->is_transmitting = 0;
+    sess->rest_ptr = 0;
+    free(buff);
+    free(transmit_in);
+	return NULL;
 }
 
 /*
 * stor，上传文件，服务器端下载
 */
-int store_file(session* sess, int file) {
+void* store_file_pthread(void* transmit_in) {
+    // 获取输入
+    session* sess = ((transmit_input*)transmit_in)->sess;
+    int file = ((transmit_input*)transmit_in)->file;
 
 	//未建立任何连接或没有建立data套接字
-	if (sess->current_pasv == -1) return 425;
+	if (sess->current_pasv == -1){
+        reply_form_msg(sess, 425);
+        return NULL;
+    }
 
 	else if (sess->current_pasv == 0) {
 		//port,服务器发起连接
-		if (sess->data_fd <= 0) return 425;
+		if (sess->data_fd <= 0) {
+            reply_form_msg(sess, 425);
+            return NULL;
+        }
 		if (connect(sess->data_fd, (struct sockaddr*)&sess->client_addr,
 				sizeof(sess->client_addr)) < 0) {
 			printf("Error connect(): %s(%d)\n", strerror(errno), errno);
-			return 426;
+			reply_form_msg(sess, 426);
+			return NULL;
 		}
 	}
 	else{
 		//pasv模式,此时连接应该已经建立
-		if (sess->data_fd <= 0) return 425;
+		if (sess->data_fd <= 0) {
+            reply_form_msg(sess, 425);
+            return NULL;
+        }
     }
 
     //开始接收
     int temp_size;
     char* buff = (char*)malloc(4096);
+    int meet_error = 0;
     while (1) {
     	temp_size = read(sess->data_fd, buff, 4096);
-    	write(file, buff, temp_size);
+        if (temp_size == -1) {
+            meet_error = 426;
+            break;
+        }
     	if (temp_size == 0) break;
-    	// if (temp_size < 4096) {
-    	// 	break;
-    	// }
-    	//temp_size = sendfile(file, sess->data_fd, NULL, 4096);
-    	// if (!temp_size) break;
+    	if (write(file, buff, temp_size) == -1){
+            meet_error = 450;
+            break;
+        }
     }
+
+    if (meet_error)
+        reply_form_msg(sess, meet_error);
+    else
+        reply_form_msg(sess, 226);
+
 	//传输完成
 	close(sess->data_fd);
 	sess->data_fd = 0;
@@ -794,6 +851,10 @@ int store_file(session* sess, int file) {
 		sess->pasv_lis_fd = 0;
 	}
 	close(file);
+	sess->current_pasv = -1;
+    sess->is_transmitting = 0;
+    sess->rest_ptr = 0;
 	free(buff);
-	return 226;
+    free(transmit_in);
+	return NULL;
 }

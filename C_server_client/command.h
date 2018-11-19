@@ -22,18 +22,25 @@ int cmd_rnfr(char* para, session* sess);
 int cmd_rnto(char* para, session* sess);
 
 int cmd_list(char* para, session* sess);
+int cmd_rest(char* para, session* sess);
 
 // begin make data connection
 int cmd_pasv(char* para, session* sess);
 int cmd_port(char* para, session* sess);
+void* pasv_accept_pthread(void* ptr);
 
 // download or upload a file
 int cmd_retr(char* para, session* sess);
-
 int cmd_stor(char* para, session* sess);
 
-int retrieve_file(session* sess, int file);
-int store_file(session* sess, int file);
+typedef struct transmit_input
+{
+    session* sess;
+    int file;
+}transmit_input;
+
+void* retrieve_file_pthread(void* transmit_in);
+void* store_file_pthread(void* transmit_in);
 
 int reply_list(session* sess, char* dir);
 
