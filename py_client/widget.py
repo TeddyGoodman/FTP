@@ -66,7 +66,7 @@ class CloudFileWidget(QListWidget):
     # 处理事件相关
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
-            cursor_item = self.itemAt(self.mapFromGlobal(QCursor.pos()))
+            cursor_item = self.itemAt(self.viewport().mapFromGlobal(QCursor.pos()))
             if cursor_item is not None and cursor_item.file_info['type'] == utility.FILE_INFO_DIR:
                 self.current_select_info = cursor_item.file_info
                 self.file_signals.enter.emit(self.current_select_info['name'])

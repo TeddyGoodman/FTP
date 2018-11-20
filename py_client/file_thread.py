@@ -2,6 +2,10 @@ from PyQt5 import QtCore
 from signals import transmitSignals
 
 class downloadThread(QtCore.QThread):
+    '''
+    封装的多线程下载文件类
+    start后从数据端口传送文件
+    '''
     def __init__(self, data_sock, file_obj, BUFF_SIZE, total_size,
         progress_func=None, finish_func=None, have_done=0):
         super(downloadThread, self).__init__()

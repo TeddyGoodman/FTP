@@ -397,7 +397,6 @@ int cmd_pasv(char* para, session* sess) {
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(temp_port);
-	//printf("temp port: %d\n", temp_port);
     //监听任何来源
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
 

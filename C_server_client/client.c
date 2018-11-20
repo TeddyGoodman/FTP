@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-//#include <sys/sendfile.h>
 #include <dirent.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -238,15 +237,6 @@ void upload_file(int file) {
 
     char* buff = (char*)malloc(4096);
 
-    //for linux
-	// while(bytes_to_send) {
-	// 	int temp_size = bytes_to_send > 4096 ? 4096 : bytes_to_send;
-	// 	int sent_size = sendfile(data_fd, file, NULL, temp_size);
-	// 	if (sent_size == -1) return;
-	// 	bytes_to_send -= sent_size;
-	// }
-
-	//for macos
 	while (bytes_to_send) {
 		int temp_size = bytes_to_send > 4096 ? 4096 : bytes_to_send;
     	int read_size = read(file, buff, temp_size);
